@@ -1,27 +1,24 @@
 import pygame
 import math # mi serve per abs da usare nella euristica
 import heapq   #frontiera
-import re
-import os
-from queue import PriorityQueue
-MAP_PATH = "mappe/arena.map"
-SCEN_PATH = "maps/arena.scen"
+import os    # serve per il file
+
+MAP = "mappe/arena2.map"
 
 WIDTH =800 #larghzza finestra
 WIN = pygame.display.set_mode((WIDTH,WIDTH))  #funzione che mi permette di creare la finestra princiaple di tipo surface con cui posso interagire
 pygame.display.set_caption("A* Algotithm")  #imposto titolo della finestra
 
 #definzione dei colori usati per l'interfaccia (colori in RGB)
-RED = (255,0,0) # esplorati
-GREEN =(0,255,0) # non ancora esplorati
-BLUE = (0,0,255)
-YELLOW = (255,255,0)
-WHITE = (255,255,255)
-BLACK =(0,0,0) # ostacolo
-PURPLE =(128,0,128)  # percorso
-ORANGE = (255,165,0) # inizio
+
+EXPLORED = (236,204,124)
+FRONTIER =(213,124,49) 
+BACKGROUND = (255,255,255)
+OBSTACLE =(0,0,0) 
+PATH =(255,175,44)
+START = (222,152,78) 
 GREY = (128,128,128)
-TORQUOISE = (64,224,208) # fine
+END = (217,101,39)
 
 class Node:
     def __init__(self,row,col,width,tot_rows):  #costruttore della classe nodo
@@ -31,47 +28,47 @@ class Node:
         self.width=width  #larghezza in pixel di ogni nodo
         self.x= row*width   #riga che indica la posizione grafica(in pixel) che serve a pygame 
         self.y=col*width    # colonna //
-        self.color=WHITE    
+        self.color=BACKGROUND    
         self.neighbors = []
         
     def get_pos(self):  #ritorna la posizione del nodo
         return self.row, self.col
 
     def is_explored(self):
-        return self.color == RED  # se il coloro è rosso singifica che è gia stato esplorato
+        return self.color == EXPLORED  # se il coloro è rosso singifica che è gia stato esplorato
 
     def is_in_frontier(self):
-        return self.color == GREEN
+        return self.color == FRONTIER
 
     def is_obstacle(self):
-        return self.color == BLACK
+        return self.color == OBSTACLE
     
     def is_start(self):
-        return self.color == ORANGE
+        return self.color == START
     
     def is_end(self):
-        return self.color == TORQUOISE
+        return self.color == END
     
     def reset(self):
-        self.color =  WHITE
+        self.color =  BACKGROUND
 
     def make_explored(self):
-        self.color = RED
+        self.color = EXPLORED
     
     def make_frontier(self):
-        self.color = GREEN
+        self.color = FRONTIER
 
     def make_obstacle(self):
-        self.color = BLACK
+        self.color = OBSTACLE
     
     def make_start(self):
-        self.color = ORANGE
+        self.color = START
     
     def make_end(self):
-        self.color = TORQUOISE
+        self.color = END
     
     def make_path(self):
-        self.color = PURPLE
+        self.color = PATH
 
     def draw(self, win):
         pygame.draw.rect(win,self.color,(self.x,self.y,self.width,self.width))
@@ -94,44 +91,20 @@ class Node:
 
     def __lt__(self,other):   # definisco come confrontare in nodi (less_than) quindi self<other sempre falso ovvero non considerarmi mai minore dell'altro
         return False
-def load_map(filename):
-    with open(filename, "r") as f:
-        lines = f.readlines()
-
-    # salto le prime 4 righe di intestazione
-    header = 4  
-    rows = len(lines) - header
-    cols = len(lines[header].strip())
-
-    grid = make_grid(rows, WIDTH)  # usa già la tua funzione esistente
-
-    for i in range(rows):
-        line = lines[header + i].strip()
-        for j, char in enumerate(line):
-            node = grid[i][j]
-            if char == "@":   # muro
-                node.make_obstacle()
-            # se vuoi supportare altri simboli:
-            # elif char == "T": ... (terreno difficile)
-    return grid
-def load_scenario(filename):
-    with open(filename, "r") as f:
-        lines = f.readlines()[1:]  # salta la riga "version"
-
-    scenarios = []
-    for line in lines:
-        parts = line.strip().split()
-        start = (int(parts[4]), int(parts[5]))
-        goal = (int(parts[6]), int(parts[7]))
-        scenarios.append((start, goal))
-    return scenarios
-
-
-
+# manhattan distance 
 def h(p1,p2):   # punto 1 e punto 2  manathan distance
     x1,y1 = p1 # estrae i valori da p1 in nelle variabili
     x2,y2 = p2
     return abs(x1-x2) + abs(y1-y2)
+'''
+distanza euclidea 
+def h(p1, p2):
+    x1, y1 = p1
+    x2, y2 = p2
+    return math.sqrt((x1-x2)**2 + (y1-y2)**2)
+'''
+
+
 def draw_path(parent,node,draw):
     while node in parent:
         node = parent[node]
@@ -140,8 +113,8 @@ def draw_path(parent,node,draw):
 
 def algorithm(draw,grid,start,end):
     count = 0 # serve per i tie breaker
-    frontier = PriorityQueue()
-    frontier.put((0,count,start))  # sto mettendo f(n) , count e start
+    frontier = []
+    heapq.heappush(frontier,((0,count,start)))  # sto mettendo f(n) , count e start
     parent = {}
     g_score = {node: float("inf") for row in grid for node in row}
     g_score[start]=0
@@ -151,12 +124,12 @@ def algorithm(draw,grid,start,end):
 
     frontier_track = {start}
 
-    while not frontier.empty():
+    while frontier:
         for event in pygame.event.get():
             if event == pygame.QUIT:
                 pygame.quit()
 
-        node = frontier.get()[2]   # il terzo valore della tupla nell'insieme che rappresenta il nodo
+        node = heapq.heappop(frontier)[2]  
         frontier_track.remove(node)
 
         if node == end:
@@ -173,7 +146,7 @@ def algorithm(draw,grid,start,end):
 
                 if neighbor not in frontier_track:
                     count+=1
-                    frontier.put((f_score[neighbor],count,neighbor))
+                    heapq.heappush(frontier,(f_score[neighbor],count,neighbor))
                     frontier_track.add(neighbor)
                     if neighbor != end:
                         neighbor.make_frontier()
@@ -184,6 +157,37 @@ def algorithm(draw,grid,start,end):
     return False   
         
 
+def load_map(map_path,win_width):
+
+    with open(map_path,"r", encoding = "utf-8") as f:
+        lines = []
+        for line in f:
+            ln= line.strip() # pulisco la stringa all'inizio e alla fine da newline e carriage residuo
+            if ln =="":
+                continue
+            lines.append(ln)
+        map_idx = None # inizializzo a None nell'eventualità che ci sia un errore 
+        for i,line in enumerate(lines):
+            if line.strip().lower() == "map":
+                map_idx=i+1  # i+1 perchè dalal riga dopo si comincia a definire la configurazione della mappa nel file map
+                break
+        if map_idx is None:
+            print("Errore nel caricamento della mappa: manca la riga 'map")
+            exit(1)
+
+        map_lines = lines[map_idx:]
+        rows = len(map_lines)
+        col = len(map_lines[0])
+
+        grid = make_grid(rows,win_width)
+
+        for r, line in enumerate(map_lines):
+            for c,ch in enumerate(line):
+                node = grid[r][c]
+                if ch != ".":
+                    node.make_obstacle()
+                    
+    return grid, rows
 
 
 
@@ -199,13 +203,13 @@ def make_grid(rows,width):  # num righe e colonne totali e larghezza totale dell
 
 def draw_grid(win,rows,width):  # finestra su cui disegnare, num righe e colonne totali, larghezza totale di win
     dim= width // rows
-    for i in range(rows):
+    for i in range(rows+1):
         pygame.draw.line(win,GREY,(0,i*dim),(width,i*dim)) # disegna una linea orizzontale per ogni riga sulla superficie win di colore GREY dal punto iniziale (0,i*dim) al punto finale (width,i*dim)
-        for j in range(rows):
-            pygame.draw.line(win,GREY,(j*dim,0),(j*dim,width))
+    for j in range(rows+1):
+        pygame.draw.line(win,GREY,(j*dim,0),(j*dim,width))
 
 def draw (win,grid,rows,width): 
-    win.fill(WHITE)
+    win.fill(BACKGROUND)
     
     for row in grid:
         for node in row:
@@ -220,179 +224,67 @@ def get_clicked_position(pos,rows,width):  #pos è la posizione restituita da py
     col = y // dim
     return  row,col
 
+def listener(win,width):
+    ROWS = 50 #valore di default cambiabile
+    grid= make_grid(ROWS,width) # creato la griglia come lista di liste
 
-
-
-def load_map_file(map_path, window_width):
-    """
-    Legge un file .map (MovingAI) e ritorna una grid (lista di liste) e rows.
-    - interpreta '.' come libero; tutto il resto come ostacolo ([@,#,T,...])
-    - scala la griglia alla finestra: make_grid(rows, window_width)
-    """
-    with open(map_path, "r") as f:
-        lines = [line.rstrip("\n") for line in f if line.strip() != ""]
-
-    # trova l'indice della linea "map" (case-insensitive)
-    map_idx = None
-    for i, line in enumerate(lines):
-        if line.strip().lower() == "map":
-            map_idx = i + 1
-            break
-    if map_idx is None:
-        raise ValueError("File .map non valido: manca la riga 'map'")
-
-    # parse header per altezza/larghezza (se presenti)
-    height = None
-    width = None
-    for line in lines[:map_idx]:
-        parts = line.split()
-        if parts[0].lower() == "height":
-            height = int(parts[1])
-        if parts[0].lower() == "width":
-            width = int(parts[1])
-
-    map_lines = lines[map_idx: map_idx + (height if height else len(lines) - map_idx)]
-    rows = len(map_lines)
-    if width is None:
-        width = len(map_lines[0])
-
-    # crea la griglia usando la tua funzione: ogni nodo dimensionato in base a window_width
-    grid = make_grid(rows, window_width)
-
-    # marca ostacoli: per ogni carattere nella mappa, se non '.' => ostacolo
-    for r, line in enumerate(map_lines):
-        for c, ch in enumerate(line):
-            if c >= len(grid[r]):  # protezione se righe irregolari
-                continue
-            if ch != '.':
-                grid[r][c].make_obstacle()
-    return grid, rows
-
-def load_scen_file(scen_path):
-    """
-    Legge un file .scen e ritorna una lista di tuple (start, goal) dove start=(x,y), goal=(x,y).
-    Strategia robusta: per ogni riga estrai gli interi e prendi, se possibile, gli ultimi 4 come startX,startY,goalX,goalY.
-    """
-    scenarios = []
-    with open(scen_path, "r") as f:
-        lines = [ln.strip() for ln in f if ln.strip()]
-    # normalmente la prima linea è 'version ...' -> la saltiamo se non contiene 4+ interi
-    for ln in lines:
-        nums = re.findall(r"-?\d+", ln)
-        nums = [int(n) for n in nums]
-        if len(nums) >= 4:
-            # prendi gli ultimi 4 numeri come (startX,startY,goalX,goalY)
-            sx, sy, gx, gy = nums[-4], nums[-3], nums[-2], nums[-1]
-            scenarios.append(((sx, sy), (gx, gy)))
-    return scenarios
-
-
-
-def listener(win, width):
-    # inizializzazione: default (sarà sovrascritto se carichi una map)
-    ROWS = 50
-    grid = make_grid(ROWS, width)
-
-    start = None
-    end = None
+    start=None
+    end=None
     run = True
-
+    runnin_algorithm = False
+    map_loaded = False
     while run:
-        # prima gestiamo gli eventi: se QUIT -> esci subito senza chiamare draw
+        draw(win,grid,ROWS,width)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
                 break
-
-            # click / tasti solo se non abbiamo già lanciato l'algoritmo
-            if event.type == pygame.MOUSEBUTTONDOWN:
-                # tasto sinistro
-                if event.button == 1:
-                    pos = pygame.mouse.get_pos()
-                    row, col = get_clicked_position(pos, ROWS, width)
+            if not runnin_algorithm:
+                if pygame.mouse.get_pressed()[0]:     # get_pressed è una funzione che restituisce una tupla(True,false, true) o qualsiasi combainzione che ci dice che il puls. sinistro /centrale /destro sono stati cliccati  e mettendo [0] significa che mi sto interessando a quello sinistro
+                    pos= pygame.mouse.get_pos()  
+                    row,col = get_clicked_position(pos,ROWS,width) # chiamo funzione ausiliaria creata prima
                     if 0 <= row < ROWS and 0 <= col < ROWS:
                         node = grid[row][col]
-                        if not start and node != end:
+                        if not start and node != end and not node.is_obstacle():
                             start = node
                             start.make_start()
-                        elif not end and node != start:
+                        elif not end and node != start and not node.is_obstacle():
                             end = node
                             end.make_end()
-                        elif node != end and node != start:
+                        elif node!= end and node!=start and not map_loaded:
                             node.make_obstacle()
-                # tasto destro: resetta cella
-                elif event.button == 3:
-                    pos = pygame.mouse.get_pos()
-                    row, col = get_clicked_position(pos, ROWS, width)
+                elif pygame.mouse.get_pressed()[2]: # tasto destro cancella le cose
+                    pos= pygame.mouse.get_pos()  
+                    row,col = get_clicked_position(pos,ROWS,width) # chiamo funzione ausiliaria creata prima
                     if 0 <= row < ROWS and 0 <= col < ROWS:
                         node = grid[row][col]
-                        node.reset()
                         if node == start:
-                            start = None
-                        if node == end:
-                            end = None
-
+                            start=None
+                            node.reset()
+                        elif node ==end:
+                            end=None
+                            node.reset()
+                        elif not map_loaded and node.is_obstacle():
+                            node.reset()
             if event.type == pygame.KEYDOWN:
-                # SPACE: avvia solo se start e end sono presenti
                 if event.key == pygame.K_SPACE and start and end:
                     for row in grid:
                         for node in row:
                             node.update_neighbors(grid)
-                    algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
-
-                # C: reset griglia manuale
+                    runnin_algorithm=True
+                    algorithm(lambda: draw(win,grid,ROWS,width), grid, start,end)                          
                 if event.key == pygame.K_c:
                     start = None
-                    end = None
-                    grid = make_grid(ROWS, width)
-
-                # L: carica mappa + scenario (MAP_PATH, SCEN_PATH) e avvia primo scenario
-                if event.key == pygame.K_l:
-                    # controlla che i file esistano
-                    if not os.path.exists(MAP_PATH):
-                        print("MAP non trovato:", MAP_PATH)
-                        continue
-                    # carica la mappa e aggiorna grid/ROWS
-                    try:
-                        grid, ROWS = load_map_file(MAP_PATH, width)
-                    except Exception as e:
-                        print("Errore caricamento map:", e)
-                        continue
-
-                    # prova a caricare lo scenario
+                    end = None 
+                    grid = make_grid(ROWS,width)
+                    runnin_algorithm=False
+                    map_loaded = False
+                if event.key == pygame.K_m:
+                    grid, ROWS = load_map(MAP,width)
                     start = None
                     end = None
-                    if os.path.exists(SCEN_PATH):
-                        scenarios = load_scen_file(SCEN_PATH)
-                        if len(scenarios) > 0:
-                            (sx, sy), (gx, gy) = scenarios[0]  # prendi il primo scenario
-                            # attenzione: sx,sy sono (x,y) => (colonna,riga)
-                            # mappa: node = grid[row][col] => row = y, col = x
-                            if 0 <= sy < ROWS and 0 <= sx < len(grid[0]) and 0 <= gy < ROWS and 0 <= gx < len(grid[0]):
-                                start = grid[sy][sx]
-                                end = grid[gy][gx]
-                                start.make_start()
-                                end.make_end()
-                            else:
-                                print("Coordinate start/goal fuori mappa:", (sx,sy), (gx,gy))
-                        else:
-                            print("Nessuno scenario trovato in:", SCEN_PATH)
-                    else:
-                        print("Nessun file .scen trovato, userà click per definire start/end")
-
-                    # aggiorna vicini e avvia l'algoritmo se start/end validi
-                    for row in grid:
-                        for node in row:
-                            node.update_neighbors(grid)
-                    if start and end:
-                        algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
-
-        if not run:
-            break
-
-        # disegna solo se la finestra è aperta
-        draw(win, grid, ROWS, width)
-
-    pygame.quit()
+                    map_loaded = True
+                    
+    pygame.quit()  #chiude la finestra una volta usciti dal while (solo quando run = false)
 
 listener(WIN,WIDTH)

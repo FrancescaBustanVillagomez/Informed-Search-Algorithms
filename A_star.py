@@ -3,11 +3,14 @@ import math # mi serve per abs da usare nella euristica
 import heapq   #frontiera
 import os    # serve per il file
 
-MAP = "mappe/arena.map"
+#MAP = "mappe/brc997d.map"
+MAP = "mappe/orz302d.map"
 
 WIDTH =800 #larghzza finestra
 WIN = pygame.display.set_mode((WIDTH,WIDTH))  #funzione che mi permette di creare la finestra princiaple di tipo surface con cui posso interagire
 pygame.display.set_caption("A* Algotithm")  #imposto titolo della finestra
+
+
 
 #definzione dei colori usati per l'interfaccia (colori in RGB)
 
@@ -21,13 +24,15 @@ GREY = (128,128,128)
 END = (217,101,39)
 
 class Node:
-    def __init__(self,row,col,width,tot_rows):  #costruttore della classe nodo
+    def __init__(self,row,col,width,heigth,tot_rows,tot_cols):  #costruttore della classe nodo
         self.row=row   #riga in cui si trova il nodo 
         self.col=col   # colonna in cui si trova il nodo    -> entrambi servono per la logica dell'algoritmo
         self.tot_rows=tot_rows   # num tot di righe e colonne della griglia
+        self.tot_cols= tot_cols
         self.width=width  #larghezza in pixel di ogni nodo
-        self.x= row*width   #riga che indica la posizione grafica(in pixel) che serve a pygame 
-        self.y=col*width    # colonna //
+        self.heigth = heigth
+        self.x = col*width    
+        self.y = row * heigth
         self.color=BACKGROUND    
         self.neighbors = []
         
@@ -71,7 +76,7 @@ class Node:
         self.color = PATH
 
     def draw(self, win):
-        pygame.draw.rect(win,self.color,(self.x,self.y,self.width,self.width))
+        pygame.draw.rect(win,self.color,(self.x,self.y,self.width,self.heigth))
     
     def update_neighbors(self,grid):
         self.neighbors=[]
@@ -112,6 +117,7 @@ def draw_path(parent,node,draw):
         draw()
 
 def algorithm(draw,grid,start,end):
+    global stop_requested
     count = 0 # serve per i tie breaker
     frontier = []
     heapq.heappush(frontier,((0,count,start)))  # sto mettendo f(n) , count e start
@@ -125,10 +131,11 @@ def algorithm(draw,grid,start,end):
     frontier_track = {start}
 
     while frontier:
+        pygame.event.pump()
         for event in pygame.event.get():
             if event == pygame.QUIT:
                 pygame.quit()
-
+        
         node = heapq.heappop(frontier)[2]  
         frontier_track.remove(node)
 
@@ -177,9 +184,8 @@ def load_map(map_path,win_width):
 
         map_lines = lines[map_idx:]
         rows = len(map_lines)
-        col = len(map_lines[0])
-
-        grid = make_grid(rows,win_width)
+        cols = len(map_lines[0])
+        grid, node_width, node_heigth = make_grid(rows,cols,win_width)
 
         for r, line in enumerate(map_lines):
             for c,ch in enumerate(line):
@@ -187,100 +193,108 @@ def load_map(map_path,win_width):
                 if ch != ".":
                     node.make_obstacle()
                     
-    return grid, rows
+    return grid, rows, cols, node_width,node_heigth
 
 
 
-def make_grid(rows,width):  # num righe e colonne totali e larghezza totale della finestra in pixel
+def make_grid(rows,cols,width):  # num righe e colonne totali e larghezza totale della finestra in pixel
     grid=[] # griglia sarà una lista di liste  dove ogni grid[i] è un riga della griglia e grid[i][j] è un nodo/cella
-    dim = width // rows # dimensione in pixel di ogni nodo   es. se finestra di 400 px e rows=20 ogni cella sarà 400//20 = 20px
+    #dim = width // max(rows,cols) # dimensione in pixel di ogni nodo in base al lato piu grande   es. se finestra di 400 px e rows=20 ogni cella sarà 400//20 = 20px
+    node_width = width // cols
+    node_heigth = width // rows
     for i in range(rows):  # fai i numeri da 0 a rows-1
         grid.append([])  # aggiungo per ogni riga i una lista vuota che conterrà i nodi di quella riga
-        for j in range(rows): # per ogni colonna j nella riga i 
-            node=Node(i,j,dim,rows) # creo un nodo
+        for j in range(cols): # per ogni colonna j nella riga i 
+            node=Node(i,j,node_width,node_heigth,rows,cols) # creo un nodo
             grid[i].append(node) # aggiungo il nodo alla riga i
-    return grid
+    return grid,node_width,node_width
 
-def draw_grid(win,rows,width):  # finestra su cui disegnare, num righe e colonne totali, larghezza totale di win
-    dim= width // rows
-    for i in range(rows):
-        pygame.draw.line(win,GREY,(0,i*dim),(width,i*dim)) # disegna una linea orizzontale per ogni riga sulla superficie win di colore GREY dal punto iniziale (0,i*dim) al punto finale (width,i*dim)
-        for j in range(rows):
-            pygame.draw.line(win,GREY,(j*dim,0),(j*dim,width))
+def draw_grid(win,rows,cols,node_width,node_height):  # finestra su cui disegnare, num righe e colonne totali, larghezza totale di win
+    for i in range(rows+1):
+        pygame.draw.line(win,GREY,(0,i*node_height),(cols * node_width,i*node_height)) # disegna una linea orizzontale per ogni riga sulla superficie win di colore GREY dal punto iniziale (0,i*dim) al punto finale (width,i*dim)
+    for j in range(cols+1):
+        pygame.draw.line(win,GREY,(j*node_width,0),(j*node_width,rows*node_height))
 
-def draw (win,grid,rows,width): 
+def draw (win,grid,rows,cols,node_width,node_heigth): 
     win.fill(BACKGROUND)
     
     for row in grid:
         for node in row:
             node.draw(win)
-    draw_grid(win,rows,width)
+    draw_grid(win,rows,cols,node_width,node_heigth)
     pygame.display.update()      
 
-def get_clicked_position(pos,rows,width):  #pos è la posizione restituita da pygame in pixel 
-    dim = width // rows
+def get_clicked_position(pos,rows,cols,node_width,node_heigth):  #pos è la posizione restituita da pygame in pixel 
+    
     x,y = pos # pos sono coordinate in pixel dove x indica la colonna (le ascisse) y la riga (le ordinate)-> pygame restituisce (x,y) io li ho invertiti per convenzioni perche in (x,y) 
-    row= x // dim
-    col = y // dim
+    row= y // node_heigth
+    col = x // node_width
     return  row,col
 
 def listener(win,width):
     ROWS = 50 #valore di default cambiabile
-    grid= make_grid(ROWS,width) # creato la griglia come lista di liste
-
+    COLS = 50
+    grid, node_width, node_heigth = make_grid(ROWS,COLS,width) # creato la griglia come lista di liste
+    global stop_requested
     start=None
     end=None
     run = True
     runnin_algorithm = False
-    map = False
+    map_loaded = False
     while run:
-        draw(win,grid,ROWS,width)
+        draw(win,grid,ROWS,COLS,node_width,node_heigth)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                stop_requested = True
                 run = False
+                break
             if not runnin_algorithm:
                 if pygame.mouse.get_pressed()[0]:     # get_pressed è una funzione che restituisce una tupla(True,false, true) o qualsiasi combainzione che ci dice che il puls. sinistro /centrale /destro sono stati cliccati  e mettendo [0] significa che mi sto interessando a quello sinistro
                     pos= pygame.mouse.get_pos()  
-                    row,col = get_clicked_position(pos,ROWS,width) # chiamo funzione ausiliaria creata prima
-                    if 0 <= row < ROWS and 0 <= col < ROWS:
+                    row,col = get_clicked_position(pos,ROWS,COLS,node_width,node_heigth) # chiamo funzione ausiliaria creata prima
+                    if 0 <= row < ROWS and 0 <= col < COLS:
                         node = grid[row][col]
-                        if not start and node != end:
+                        if not start and node != end and not node.is_obstacle():
                             start = node
                             start.make_start()
-                        elif not end and node != start:
+                        elif not end and node != start and not node.is_obstacle():
                             end = node
                             end.make_end()
-                        elif node!= end and node!=start and not map:
+                        elif node!= end and node!=start and not map_loaded:
                             node.make_obstacle()
                 elif pygame.mouse.get_pressed()[2]: # tasto destro cancella le cose
                     pos= pygame.mouse.get_pos()  
-                    row,col = get_clicked_position(pos,ROWS,width) # chiamo funzione ausiliaria creata prima
-                    if 0 <= row < ROWS and 0 <= col < ROWS:
+                    row,col = get_clicked_position(pos,ROWS,COLS,node_width, node_heigth) # chiamo funzione ausiliaria creata prima
+                    if 0 <= row < ROWS and 0 <= col < COLS:
                         node = grid[row][col]
-                        if not map and node.is_obstacle():
-                            node.reset()
                         if node == start:
                             start=None
+                            node.reset()
                         elif node ==end:
                             end=None
+                            node.reset()
+                        elif not map_loaded and node.is_obstacle():
+                            node.reset()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and start and end:
                     for row in grid:
                         for node in row:
                             node.update_neighbors(grid)
                     runnin_algorithm=True
-                    algorithm(lambda: draw(win,grid,ROWS,width), grid, start,end)                          
+                    algorithm(lambda: draw(win,grid,ROWS,COLS,node_width,node_heigth), grid, start,end)                          
                 if event.key == pygame.K_c:
                     start = None
                     end = None 
-                    grid = make_grid(ROWS,width)
+                    grid, node_width, node_heigth = make_grid(ROWS,COLS,width)
                     runnin_algorithm=False
-                    map = False
+                    map_loaded = False
                 if event.key == pygame.K_m:
-                    grid, ROWS = load_map(MAP,width)
+                    grid, ROWS,COLS, node_width, node_heigth = load_map(MAP,width)
+                    WIDTH = node_width * COLS
+                    WIN = pygame.display.set_mode((WIDTH,WIDTH))
                     start = None
                     end = None
-                    map = True
+                    map_loaded = True
                     
     pygame.quit()  #chiude la finestra una volta usciti dal while (solo quando run = false)
 
