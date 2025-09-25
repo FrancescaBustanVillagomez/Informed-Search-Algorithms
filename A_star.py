@@ -6,7 +6,7 @@ import threading   # per separere l'esecuzione e la gestione della pagina
 import sys #serve per interrompere il programma
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAP = os.path.join(BASE_DIR, "mappe", "brc997d.map")
+MAP = os.path.join(BASE_DIR, "mappe", "ost004d.map")
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 
@@ -117,7 +117,8 @@ def h(p1, p2):
 def draw_path(parent,node,draw):
     while node in parent:
         node = parent[node]
-        node.make_path()
+        if not node.is_start() and not node.is_end():
+            node.make_path()
         draw()
 
 def algorithm(draw,grid,start,end):
@@ -237,7 +238,9 @@ def get_clicked_position(pos,rows,cols,node_width,node_heigth):  #pos è la posi
     return  row,col
 
 def run_algorithm_thread(draw,grid,start,end):
+    #global runnin_algorithm
     algorithm(draw,grid,start,end)
+    #runnin_algorithm = False
 
 
 def listener(win,width):
@@ -248,6 +251,7 @@ def listener(win,width):
     start=None
     end=None
     run = True
+    global runnin_algorithm
     runnin_algorithm = False
     map_loaded = False
     draw(win,grid,ROWS,COLS,node_width,node_heigth)
@@ -291,13 +295,23 @@ def listener(win,width):
                             node.reset()
                         draw(win, grid, ROWS, COLS, node_width, node_heigth)    
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE and start and end:
-                    for row in grid:
-                        for node in row:
-                            node.update_neighbors(grid)
-                    runnin_algorithm=True
-                    thread = threading.Thread(target = run_algorithm_thread, args =(lambda: draw(win, grid, ROWS, COLS, node_width, node_heigth),grid, start, end))
-                    thread.start()                        
+                if not runnin_algorithm:
+                    if event.key == pygame.K_SPACE and start and end and not runnin_algorithm:
+                        for row in grid:
+                            for node in row:
+                                node.update_neighbors(grid)
+                        runnin_algorithm=True
+                        thread = threading.Thread(target = run_algorithm_thread, args =(lambda: draw(win, grid, ROWS, COLS, node_width, node_heigth),grid, start, end))
+                        thread.start()                        
+                    elif event.key == pygame.K_m:
+                        grid, ROWS,COLS, node_width, node_heigth = load_map(MAP,width)
+                        WIDTH = node_width * COLS
+                        WIN = pygame.display.set_mode((WIDTH,WIDTH))
+                        start = None
+                        end = None
+                        map_loaded = True
+                        draw(win, grid, ROWS, COLS, node_width, node_heigth)
+                    
                 if event.key == pygame.K_c:
                     start = None
                     end = None 
@@ -305,14 +319,7 @@ def listener(win,width):
                     runnin_algorithm=False
                     map_loaded = False
                     draw(win, grid, ROWS, COLS, node_width, node_heigth)
-                if event.key == pygame.K_m:
-                    grid, ROWS,COLS, node_width, node_heigth = load_map(MAP,width)
-                    WIDTH = node_width * COLS
-                    WIN = pygame.display.set_mode((WIDTH,WIDTH))
-                    start = None
-                    end = None
-                    map_loaded = True
-                    draw(win, grid, ROWS, COLS, node_width, node_heigth)
+                
                     
     pygame.quit()  #chiude la finestra una volta usciti dal while (solo quando run = false)
 
