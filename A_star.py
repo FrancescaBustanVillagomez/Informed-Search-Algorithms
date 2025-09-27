@@ -6,9 +6,23 @@ import threading   # per separere l'esecuzione e la gestione della pagina
 import sys #serve per interrompere il programma
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAP = os.path.join(BASE_DIR, "mappe", "ost004d.map")
+MAP = os.path.join(BASE_DIR, "mappe", "arena.map")
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
+# Mappe piccole
+#MAP = "den009d.map" 34*50
+#MAP = "den201d.map " 37*37
+#MAP = "den404d.map" 34*28
+#MAP = "hrt002d.map" 50*49
+#MAP = "isound1.map" 50*49
+#MAP = "lak101d.map" 31*30 dalla 101 alla 105 poi 107-110
+#MAP = "lgt101d.map" 28*44 da 101 a 105 e da 107 a 110
+
+#mappe grandi
+#MAP = "mappe2/lt_foundry_n.map" 92*109
+#MAP = "lgt101d.map" 28*44
+
+
 
 WIDTH =800 #larghzza finestra
 WIN = pygame.display.set_mode((WIDTH,WIDTH))  #funzione che mi permette di creare la finestra princiaple di tipo surface con cui posso interagire
@@ -90,7 +104,7 @@ class Node:
         if self.row>0 and not grid[self.row-1][self.col].is_obstacle():  
             self.neighbors.append(grid[self.row-1][self.col])
 
-        if self.col<self.tot_rows-1 and not grid[self.row][self.col+1].is_obstacle():  
+        if self.col<self.tot_cols-1 and not grid[self.row][self.col+1].is_obstacle():  
             self.neighbors.append(grid[self.row][self.col+1])
 
         if self.col>0 and not grid[self.row][self.col-1].is_obstacle():  
@@ -213,7 +227,7 @@ def make_grid(rows,cols,width):  # num righe e colonne totali e larghezza totale
         for j in range(cols): # per ogni colonna j nella riga i 
             node=Node(i,j,node_width,node_heigth,rows,cols) # creo un nodo
             grid[i].append(node) # aggiungo il nodo alla riga i
-    return grid,node_width,node_width
+    return grid,node_width,node_heigth
 
 def draw_grid(win,rows,cols,node_width,node_height):  # finestra su cui disegnare, num righe e colonne totali, larghezza totale di win
     for i in range(rows+1):

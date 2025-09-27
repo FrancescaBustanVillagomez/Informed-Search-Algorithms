@@ -6,9 +6,23 @@ import threading   # per separere l'esecuzione e la gestione della pagina
 import sys #serve per interrompere il programma
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAP = os.path.join(BASE_DIR, "mappe", "brc997d.map")
+MAP = os.path.join(BASE_DIR, "mappe", "arena.map")
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
+# Mappe piccole
+#MAP = "den009d.map" 34*50
+#MAP = "den201d.map " 37*37
+#MAP = "den404d.map" 34*28
+#MAP = "hrt002d.map" 50*49
+#MAP = "isound1.map" 50*49
+#MAP = "lak101d.map" 31*30 dalla 101 alla 105 poi 107-110
+#MAP = "lgt101d.map" 28*44 da 101 a 105 e da 107 a 110
+
+#mappe grandi
+#MAP = "mappe2/lt_foundry_n.map" 92*109
+#MAP = "lgt101d.map" 28*44
+
+
 
 WIDTH =800 #larghzza finestra
 WIN = pygame.display.set_mode((WIDTH,WIDTH))  #funzione che mi permette di creare la finestra princiaple di tipo surface con cui posso interagire
@@ -90,7 +104,7 @@ class Node:
         if self.row>0 and not grid[self.row-1][self.col].is_obstacle():  
             self.neighbors.append(grid[self.row-1][self.col])
 
-        if self.col<self.tot_rows-1 and not grid[self.row][self.col+1].is_obstacle():  
+        if self.col<self.tot_cols-1 and not grid[self.row][self.col+1].is_obstacle():  
             self.neighbors.append(grid[self.row][self.col+1])
 
         if self.col>0 and not grid[self.row][self.col-1].is_obstacle():  
@@ -117,7 +131,8 @@ def h(p1, p2):
 def draw_path(parent,node,draw):
     while node in parent:
         node = parent[node]
-        node.make_path()
+        if not node.is_start() and not node.is_end():
+            node.make_path()
         draw()
 
 def algorithm(draw,grid,start,end):
@@ -212,7 +227,7 @@ def make_grid(rows,cols,width):  # num righe e colonne totali e larghezza totale
         for j in range(cols): # per ogni colonna j nella riga i 
             node=Node(i,j,node_width,node_heigth,rows,cols) # creo un nodo
             grid[i].append(node) # aggiungo il nodo alla riga i
-    return grid,node_width,node_width
+    return grid,node_width,node_heigth
 
 def draw_grid(win,rows,cols,node_width,node_height):  # finestra su cui disegnare, num righe e colonne totali, larghezza totale di win
     for i in range(rows+1):
@@ -237,7 +252,9 @@ def get_clicked_position(pos,rows,cols,node_width,node_heigth):  #pos è la posi
     return  row,col
 
 def run_algorithm_thread(draw,grid,start,end):
+    #global runnin_algorithm
     algorithm(draw,grid,start,end)
+    #runnin_algorithm = False
 
 
 def listener(win,width):
@@ -248,6 +265,7 @@ def listener(win,width):
     start=None
     end=None
     run = True
+    global runnin_algorithm
     runnin_algorithm = False
     map_loaded = False
     draw(win,grid,ROWS,COLS,node_width,node_heigth)
@@ -291,13 +309,23 @@ def listener(win,width):
                             node.reset()
                         draw(win, grid, ROWS, COLS, node_width, node_heigth)    
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE and start and end:
-                    for row in grid:
-                        for node in row:
-                            node.update_neighbors(grid)
-                    runnin_algorithm=True
-                    thread = threading.Thread(target = run_algorithm_thread, args =(lambda: draw(win, grid, ROWS, COLS, node_width, node_heigth),grid, start, end))
-                    thread.start()                        
+                if not runnin_algorithm:
+                    if event.key == pygame.K_SPACE and start and end and not runnin_algorithm:
+                        for row in grid:
+                            for node in row:
+                                node.update_neighbors(grid)
+                        runnin_algorithm=True
+                        thread = threading.Thread(target = run_algorithm_thread, args =(lambda: draw(win, grid, ROWS, COLS, node_width, node_heigth),grid, start, end))
+                        thread.start()                        
+                    elif event.key == pygame.K_m:
+                        grid, ROWS,COLS, node_width, node_heigth = load_map(MAP,width)
+                        WIDTH = node_width * COLS
+                        WIN = pygame.display.set_mode((WIDTH,WIDTH))
+                        start = None
+                        end = None
+                        map_loaded = True
+                        draw(win, grid, ROWS, COLS, node_width, node_heigth)
+                    
                 if event.key == pygame.K_c:
                     start = None
                     end = None 
@@ -305,14 +333,7 @@ def listener(win,width):
                     runnin_algorithm=False
                     map_loaded = False
                     draw(win, grid, ROWS, COLS, node_width, node_heigth)
-                if event.key == pygame.K_m:
-                    grid, ROWS,COLS, node_width, node_heigth = load_map(MAP,width)
-                    WIDTH = node_width * COLS
-                    WIN = pygame.display.set_mode((WIDTH,WIDTH))
-                    start = None
-                    end = None
-                    map_loaded = True
-                    draw(win, grid, ROWS, COLS, node_width, node_heigth)
+                
                     
     pygame.quit()  #chiude la finestra una volta usciti dal while (solo quando run = false)
 
