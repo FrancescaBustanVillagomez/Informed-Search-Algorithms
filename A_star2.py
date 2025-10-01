@@ -7,7 +7,7 @@ import sys
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
+MAP = os.path.join(BASE_DIR, "mappe", "rmtst.map")  # percorso completo per trovare la mappa
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 # Mappe piccole
@@ -18,6 +18,12 @@ MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per tr
 #MAP = "isound1.map" 50*49
 #MAP = "lak101d.map" 31*30 dalla 101 alla 105 poi 107-110
 #MAP = "lgt101d.map" 28*44 da 101 a 105 e da 107 a 110
+
+#Mappe medie:
+#MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den308d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den998d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "hrt002d.map")
 
 #mappe grandi
 #MAP = "mappe2/lt_foundry_n.map" 92*109
@@ -258,88 +264,125 @@ def load_map(map_path):
         return None, 0, 0, 0, 0
 
 
+def adjust_viewport_to_grid(rows, cols, node_size):
+    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
+    global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
+    
+    grid_width = cols * node_size
+    grid_height = rows * node_size
+    
+    # Finestra massima consentita (es. schermo tipico)
+    MAX_WINDOW_WIDTH = 1920
+    MAX_WINDOW_HEIGHT = 1080
+    
+    # Finestra minima consentita
+    MIN_WINDOW_SIZE = 400
+    
+    # Calcola nuove dimensioni viewport
+    new_width = VIEWPORT_WIDTH
+    new_height = VIEWPORT_HEIGHT
+    
+    # Se la griglia è più piccola del viewport, riduci la finestra
+    if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
+        new_width = min(grid_width, MAX_WINDOW_WIDTH)
+    
+    if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
+        new_height = min(grid_height, MAX_WINDOW_HEIGHT)
+    
+    # Aggiorna viewport se necessario
+    if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
+        VIEWPORT_WIDTH = new_width
+        VIEWPORT_HEIGHT = new_height
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        print(f"Debug: Viewport ridimensionato a {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
+        return True
+    
+    return False
+
 def make_grid(rows, cols):
     """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
     import math
     
-    # Calcola quale dimensione sarebbe necessaria per riempire completamente ogni asse
+    # Calcola dimensione base per mantenere i nodi quadrati
     size_for_width = VIEWPORT_WIDTH / cols
     size_for_height = VIEWPORT_HEIGHT / rows
-    
-    # Usa la dimensione più piccola per mantenere i nodi quadrati
     exact_size = min(size_for_width, size_for_height)
     
-    # Calcola quanto spazio verrebbe sprecato con la dimensione standard
-    total_width_standard = cols * exact_size
-    total_height_standard = rows * exact_size
-    wasted_width = VIEWPORT_WIDTH - total_width_standard
-    wasted_height = VIEWPORT_HEIGHT - total_height_standard
-    wasted_percent_w = (wasted_width / VIEWPORT_WIDTH) * 100
-    wasted_percent_h = (wasted_height / VIEWPORT_HEIGHT) * 100
-    
-    # Applica ottimizzazione SOLO se c'è uno squilibrio significativo
-    # (una dimensione spreca molto più dell'altra)
-    max_wasted = max(wasted_percent_w, wasted_percent_h)
-    min_wasted = min(wasted_percent_w, wasted_percent_h)
-    
-    # Se la differenza di spreco è > 10% E lo spreco massimo è > 10%, ottimizza
-    if (max_wasted - min_wasted) > 10 and max_wasted > 10:
-        if wasted_height > wasted_width:
-            # La larghezza è il limite (mappa alta e stretta)
-            # Aumenta la dimensione per riempire il 95% dell'altezza
-            target_size = (VIEWPORT_HEIGHT * 0.95) / rows
-            # Ma non superare troppo la larghezza disponibile (max 130%)
-            if (cols * target_size) <= VIEWPORT_WIDTH * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa alta/stretta, spazio sprecato H={wasted_percent_h:.1f}% W={wasted_percent_w:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa alta/stretta, ma aumento creerebbe troppo overflow in larghezza")
-        else:
-            # L'altezza è il limite (mappa larga e bassa)
-            # Aumenta la dimensione per riempire il 95% della larghezza
-            target_size = (VIEWPORT_WIDTH * 0.95) / cols
-            # Ma non superare troppo l'altezza disponibile (max 130%)
-            if (rows * target_size) <= VIEWPORT_HEIGHT * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa larga/bassa, spazio sprecato W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa larga/bassa, ma aumento creerebbe troppo overflow in altezza")
-    else:
-        print(f"Debug: Mappa bilanciata (spreco W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%), uso dimensione standard")
-    
     # Verifica dimensione minima
-    if exact_size >= MIN_NODE_SIZE:
-        # Arrotondamento intelligente
-        # Per mappe bilanciate, arrotonda normalmente
-        # Per mappe ottimizzate, arrotonda per eccesso
-        if max_wasted > min_wasted + 10:
-            node_size = math.ceil(exact_size)  # Arrotonda per eccesso
-        else:
-            node_size = round(exact_size)  # Arrotonda normale
-        
-        total_width = cols * node_size
-        total_height = rows * node_size
-        
-        # Se supera del 20%, riduci di 1 (per mappe bilanciate vogliamo stare dentro)
-        max_overflow = 1.2 if max_wasted <= min_wasted + 10 else 1.3
-        if total_width > VIEWPORT_WIDTH * max_overflow or total_height > VIEWPORT_HEIGHT * max_overflow:
-            node_size -= 1
-            total_width = cols * node_size
-            total_height = rows * node_size
-        
-        node_width = node_height = node_size
-        
-        aspect_ratio = max(cols/rows, rows/cols)
-        print(f"Debug: Griglia {rows}x{cols} (aspect ratio: {aspect_ratio:.2f})")
-        print(f"Debug: Dimensione calcolata: {exact_size:.2f}px")
-        print(f"Debug: Dimensione finale (quadrata): {node_size}x{node_size}")
-        print(f"Debug: Totale griglia: {total_width}x{total_height}")
-        print(f"Debug: Viewport: {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
-        print(f"Debug: Utilizzo: {(total_width/VIEWPORT_WIDTH)*100:.1f}% width, {(total_height/VIEWPORT_HEIGHT)*100:.1f}% height")
+    if exact_size < MIN_NODE_SIZE:
+        node_size = MIN_NODE_SIZE
+        print(f"Debug: Griglia molto grande {rows}×{cols}, usando dimensione minima {MIN_NODE_SIZE}")
     else:
-        # Per mappe molto grandi, usa dimensione minima
-        node_width = node_height = MIN_NODE_SIZE
-        print(f"Debug: Griglia molto grande {rows}x{cols}, usando dimensione minima {MIN_NODE_SIZE}")
+        # Calcola spreco con entrambe le opzioni
+        node_size_floor = math.floor(exact_size)
+        node_size_ceil = math.ceil(exact_size)
+        
+        # Calcola dimensioni totali
+        width_floor = cols * node_size_floor
+        height_floor = rows * node_size_floor
+        width_ceil = cols * node_size_ceil
+        height_ceil = rows * node_size_ceil
+        
+        # Calcola utilizzo viewport (0-1 = sottoutilizzo, >1 = overflow)
+        usage_floor_w = width_floor / VIEWPORT_WIDTH
+        usage_floor_h = height_floor / VIEWPORT_HEIGHT
+        usage_ceil_w = width_ceil / VIEWPORT_WIDTH
+        usage_ceil_h = height_ceil / VIEWPORT_HEIGHT
+        
+        # Spreco totale = somma degli spazi vuoti sui due assi
+        waste_floor = max(0, 1 - usage_floor_w) + max(0, 1 - usage_floor_h)
+        waste_ceil = max(0, 1 - usage_ceil_w) + max(0, 1 - usage_ceil_h)
+        
+        # Overflow massimo
+        overflow_floor = max(usage_floor_w, usage_floor_h)
+        overflow_ceil = max(usage_ceil_w, usage_ceil_h)
+        
+        # LOGICA DI SCELTA: privilegia riempimento ma rispetta limiti
+        MAX_OVERFLOW = 1.05  # Massimo 5% di overflow
+        MIN_USAGE = 0.90     # Almeno 90% di utilizzo
+        
+        # Preferisci ceil se:
+        # 1. Non supera il 5% di overflow, E
+        # 2. Riduce significativamente lo spreco (almeno 5%)
+        if overflow_ceil <= MAX_OVERFLOW and waste_floor - waste_ceil > 0.05:
+            node_size = node_size_ceil
+            reason = f"ceil per riempire meglio (spreco: floor={waste_floor*100:.1f}% vs ceil={waste_ceil*100:.1f}%)"
+        
+        # Altrimenti usa ceil solo se floor spreca troppo
+        elif overflow_ceil <= MAX_OVERFLOW and (usage_floor_w < MIN_USAGE or usage_floor_h < MIN_USAGE):
+            node_size = node_size_ceil
+            reason = f"ceil perché floor sottoutilizza ({usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+        
+        # Default: usa floor per sicurezza
+        else:
+            node_size = node_size_floor
+            if overflow_ceil > MAX_OVERFLOW:
+                reason = f"floor per evitare overflow (ceil→{overflow_ceil*100:.1f}%)"
+            else:
+                reason = f"floor per sicurezza (utilizzo {usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+        
+        print(f"Debug: {reason}")
+    
+    # Calcola dimensioni finali
+    total_width = cols * node_size
+    total_height = rows * node_size
+    node_width = node_height = node_size
+    
+    # Report finale
+    usage_w = (total_width / VIEWPORT_WIDTH) * 100
+    usage_h = (total_height / VIEWPORT_HEIGHT) * 100
+    waste_w = max(0, VIEWPORT_WIDTH - total_width)
+    waste_h = max(0, VIEWPORT_HEIGHT - total_height)
+    
+    aspect_ratio = max(cols/rows, rows/cols)
+    print(f"Debug: Griglia {rows}×{cols} (aspect ratio: {aspect_ratio:.2f})")
+    print(f"Debug: Dimensione calcolata: {exact_size:.2f}px → finale: {node_size}×{node_size}px")
+    print(f"Debug: Totale griglia: {total_width}×{total_height} vs viewport {VIEWPORT_WIDTH}×{VIEWPORT_HEIGHT}")
+    print(f"Debug: Utilizzo: {usage_w:.1f}% width, {usage_h:.1f}% height")
+    print(f"Debug: Spreco: {waste_w}px width ({waste_w/VIEWPORT_WIDTH*100:.1f}%), {waste_h}px height ({waste_h/VIEWPORT_HEIGHT*100:.1f}%)")
+    
+    # Adatta il viewport alla griglia se conviene
+    adjust_viewport_to_grid(rows, cols, node_size)
     
     grid = []
     for i in range(rows):  # fai i numeri da 0 a rows-1

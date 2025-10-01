@@ -6,23 +6,23 @@ import threading
 import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-#MAP = os.path.join(BASE_DIR, "mappe2", "lt_foundry_n.map")
-MAP = os.path.join(BASE_DIR, "mappe", "rmtst.map")
+MAP = os.path.join(BASE_DIR, "mappe", "arena2.map")
 
 WIDTH = 800
-#WIN = pygame.display.set_mode((WIDTH, WIDTH))
-WIN = None
-#pygame.display.set_caption("A* Algorithm")
+WIN = None  # Verrà inizializzato dopo
+pygame.display.set_caption("A* Algorithm")
 
-# Parametri viewport fissi
+# Parametri viewport dinamici
 VIEWPORT_WIDTH = WIDTH
 VIEWPORT_HEIGHT = WIDTH
 SCROLL_SPEED = 20
-MIN_NODE_SIZE = 5  # Dimensione minima dei nodi in pixel
+MIN_NODE_SIZE = 5
 
 # Variabili globali
 stop_requested = False
 algorithm_running = False
+is_fullscreen = False  # NUOVO: tracking modalità fullscreen
+original_viewport_size = (WIDTH, WIDTH)  # NUOVO: salva dimensioni originali
 
 # Colori
 EXPLORED = (236, 204, 124)
@@ -90,23 +90,18 @@ class Node:
         draw_x = self.x - offset_x
         draw_y = self.y - offset_y
         
-        # Solo disegna se il nodo è visibile nel viewport
         if (-self.width <= draw_x <= VIEWPORT_WIDTH and 
             -self.height <= draw_y <= VIEWPORT_HEIGHT):
             pygame.draw.rect(win, self.color, (draw_x, draw_y, self.width, self.height))
     
     def update_neighbors(self, grid):
         self.neighbors = []
-        # Giù
         if self.row < self.tot_rows - 1 and not grid[self.row + 1][self.col].is_obstacle():
             self.neighbors.append(grid[self.row + 1][self.col])
-        # Su
         if self.row > 0 and not grid[self.row - 1][self.col].is_obstacle():
             self.neighbors.append(grid[self.row - 1][self.col])
-        # Destra
         if self.col < self.tot_cols - 1 and not grid[self.row][self.col + 1].is_obstacle():
             self.neighbors.append(grid[self.row][self.col + 1])
-        # Sinistra
         if self.col > 0 and not grid[self.row][self.col - 1].is_obstacle():
             self.neighbors.append(grid[self.row][self.col - 1])
 
@@ -145,7 +140,6 @@ def algorithm(draw_func, grid, start, end):
     step_counter = 0
     
     while frontier and not stop_requested:
-        # Controllo eventi pygame per evitare freeze
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
@@ -177,11 +171,10 @@ def algorithm(draw_func, grid, start, end):
         if current != start:
             current.make_explored()
         
-        # Disegna solo ogni N step per ridurre il flickering
         step_counter += 1
-        if step_counter % 5 == 0:  # Disegna ogni 5 step
+        if step_counter % 5 == 0:
             draw_func()
-            pygame.time.delay(10)  # Piccola pausa per vedere l'animazione
+            pygame.time.delay(10)
     
     return False
 
@@ -191,7 +184,6 @@ def load_map(map_path):
         with open(map_path, "r", encoding="utf-8") as f:
             lines = [line.strip() for line in f if line.strip()]
         
-        # Trova la linea "map"
         map_idx = None
         for i, line in enumerate(lines):
             if line.lower() == "map":
@@ -212,7 +204,6 @@ def load_map(map_path):
         
         grid, node_width, node_height = make_grid(rows, cols)
         
-        # Popola la griglia con gli ostacoli
         for r, line in enumerate(map_lines):
             for c, ch in enumerate(line):
                 if r < rows and c < cols:
@@ -229,284 +220,84 @@ def load_map(map_path):
         print(f"Errore nel caricamento della mappa: {e}")
         return None, 0, 0, 0, 0
 
-'''def make_grid(rows, cols):
-    """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
-    import math
+# NUOVO: Funzione per toggle fullscreen
+def toggle_fullscreen(rows, cols, current_node_size):
+    """Attiva/disattiva modalità fullscreen e ricalcola dimensioni"""
+    global WIN, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, is_fullscreen, original_viewport_size
     
-    # Calcola quale dimensione sarebbe necessaria per riempire completamente ogni asse
-    size_for_width = VIEWPORT_WIDTH / cols
-    size_for_height = VIEWPORT_HEIGHT / rows
-    
-    # Usa la dimensione più piccola per mantenere i nodi quadrati
-    exact_size = min(size_for_width, size_for_height)
-    
-    # Calcola quanto spazio verrebbe sprecato con la dimensione standard
-    total_width_standard = cols * exact_size
-    total_height_standard = rows * exact_size
-    wasted_width = VIEWPORT_WIDTH - total_width_standard
-    wasted_height = VIEWPORT_HEIGHT - total_height_standard
-    wasted_percent_w = (wasted_width / VIEWPORT_WIDTH) * 100
-    wasted_percent_h = (wasted_height / VIEWPORT_HEIGHT) * 100
-    
-    # Applica ottimizzazione SOLO se c'è uno squilibrio significativo
-    # (una dimensione spreca molto più dell'altra)
-    max_wasted = max(wasted_percent_w, wasted_percent_h)
-    min_wasted = min(wasted_percent_w, wasted_percent_h)
-    
-    # Se la differenza di spreco è > 10% E lo spreco massimo è > 10%, ottimizza
-    if (max_wasted - min_wasted) > 10 and max_wasted > 10:
-        if wasted_height > wasted_width:
-            # La larghezza è il limite (mappa alta e stretta)
-            # Aumenta la dimensione per riempire il 95% dell'altezza
-            target_size = (VIEWPORT_HEIGHT * 0.95) / rows
-            # Ma non superare troppo la larghezza disponibile (max 130%)
-            if (cols * target_size) <= VIEWPORT_WIDTH * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa alta/stretta, spazio sprecato H={wasted_percent_h:.1f}% W={wasted_percent_w:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa alta/stretta, ma aumento creerebbe troppo overflow in larghezza")
-        else:
-            # L'altezza è il limite (mappa larga e bassa)
-            # Aumenta la dimensione per riempire il 95% della larghezza
-            target_size = (VIEWPORT_WIDTH * 0.95) / cols
-            # Ma non superare troppo l'altezza disponibile (max 130%)
-            if (rows * target_size) <= VIEWPORT_HEIGHT * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa larga/bassa, spazio sprecato W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa larga/bassa, ma aumento creerebbe troppo overflow in altezza")
+    if not is_fullscreen:
+        # Entra in fullscreen
+        original_viewport_size = (VIEWPORT_WIDTH, VIEWPORT_HEIGHT)
+        
+        # Ottieni risoluzione schermo NATIVA (per HiDPI/Retina)
+        # Usa flags per ottenere la risoluzione reale
+        display_info = pygame.display.Info()
+        screen_width = display_info.current_w
+        screen_height = display_info.current_h
+        
+        # Per schermi HiDPI, pygame potrebbe dare valori scalati
+        # Prova a usare la risoluzione desktop reale
+        import ctypes
+        try:
+            # Windows
+            user32 = ctypes.windll.user32
+            user32.SetProcessDPIAware()
+            screen_width = user32.GetSystemMetrics(0)
+            screen_height = user32.GetSystemMetrics(1)
+            print(f"Debug: Risoluzione Windows nativa {screen_width}x{screen_height}")
+        except:
+            # Linux/Mac - usa pygame standard
+            print(f"Debug: Risoluzione pygame {screen_width}x{screen_height}")
+        
+        VIEWPORT_WIDTH = screen_width
+        VIEWPORT_HEIGHT = screen_height
+        
+        # Usa SCALED per supporto HiDPI automatico
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT), 
+                                       pygame.FULLSCREEN | pygame.SCALED)
+        is_fullscreen = True
+        
+        print(f"Debug: Fullscreen attivato {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
+        
+        # Ricalcola dimensioni nodi per riempire lo schermo grande
+        grid, node_width, node_height = make_grid(rows, cols)
+        return grid, node_width, node_height
     else:
-        print(f"Debug: Mappa bilanciata (spreco W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%), uso dimensione standard")
-    
-    # Verifica dimensione minima
-    if exact_size >= MIN_NODE_SIZE:
-        # Arrotondamento intelligente
-        if max_wasted > min_wasted + 10:
-            # Mappa sbilanciata - arrotonda per eccesso per riempire
-            node_size = math.ceil(exact_size)
-        else:
-            # Mappa bilanciata - cerca la dimensione ottimale per riempire al 100%
-            node_size_floor = math.floor(exact_size)
-            node_size_ceil = math.ceil(exact_size)
-            
-            # Calcola utilizzo con entrambe le dimensioni
-            usage_floor = max((cols * node_size_floor) / VIEWPORT_WIDTH, 
-                            (rows * node_size_floor) / VIEWPORT_HEIGHT)
-            usage_ceil = max((cols * node_size_ceil) / VIEWPORT_WIDTH,
-                           (rows * node_size_ceil) / VIEWPORT_HEIGHT)
-            
-            # Strategia: preferisci sempre riempire di più, anche con overflow
-            # Se ceil è <= 110%, usalo per massimizzare il riempimento
-            if usage_ceil <= 1.10:
-                node_size = node_size_ceil
-                print(f"Debug: Uso ceil per massimizzare (utilizzo {usage_ceil*100:.1f}%)")
-            # Se floor lascia troppo spreco (< 92%), usa ceil anche se va oltre 110%
-            elif usage_floor < 0.92:
-                node_size = node_size_ceil
-                print(f"Debug: Uso ceil per evitare spreco eccessivo (floor solo {usage_floor*100:.1f}%)")
-            # Altrimenti usa quello più vicino al 100%
-            elif abs(usage_floor - 1.0) < abs(usage_ceil - 1.0):
-                node_size = node_size_floor
-                print(f"Debug: Uso floor per stare vicino al 100% (utilizzo {usage_floor*100:.1f}%)")
-            else:
-                node_size = node_size_ceil
-                print(f"Debug: Uso ceil come compromesso (utilizzo {usage_ceil*100:.1f}%)")
+        # Esci da fullscreen
+        VIEWPORT_WIDTH, VIEWPORT_HEIGHT = original_viewport_size
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        is_fullscreen = False
         
-        total_width = cols * node_size
-        total_height = rows * node_size
+        print(f"Debug: Fullscreen disattivato {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
         
-        # Per mappe bilanciate max 110%, per sbilanciate max 130%
-        max_overflow = 1.10 if max_wasted <= min_wasted + 10 else 1.3
-        if total_width > VIEWPORT_WIDTH * max_overflow or total_height > VIEWPORT_HEIGHT * max_overflow:
-            node_size -= 1
-            total_width = cols * node_size
-            total_height = rows * node_size
-            print(f"Debug: Ridotto a {node_size} per rispettare overflow max {max_overflow*100:.0f}%")
-        
-        node_width = node_height = node_size
-        
-        aspect_ratio = max(cols/rows, rows/cols)
-        print(f"Debug: Griglia {rows}x{cols} (aspect ratio: {aspect_ratio:.2f})")
-        print(f"Debug: Dimensione calcolata: {exact_size:.2f}px")
-        print(f"Debug: Dimensione finale (quadrata): {node_size}x{node_size}")
-        print(f"Debug: Totale griglia: {total_width}x{total_height}")
-        print(f"Debug: Viewport: {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
-        print(f"Debug: Utilizzo: {(total_width/VIEWPORT_WIDTH)*100:.1f}% width, {(total_height/VIEWPORT_HEIGHT)*100:.1f}% height")
-    else:
-        # Per mappe molto grandi, usa dimensione minima
-        node_width = node_height = MIN_NODE_SIZE
-        print(f"Debug: Griglia molto grande {rows}x{cols}, usando dimensione minima {MIN_NODE_SIZE}")
-    
-    # Crea griglia con nodi uniformi
-    grid = []
-    for i in range(rows):
-        grid.append([])
-        for j in range(cols):
-            node = Node(i, j, node_width, node_height, rows, cols)
-            grid[i].append(node)
-    
-    return grid, node_width, node_height
-'''
-'''
-def make_grid(rows, cols):
-    """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
-    import math
-    
-    # Calcola quale dimensione sarebbe necessaria per riempire completamente ogni asse
-    size_for_width = VIEWPORT_WIDTH / cols
-    size_for_height = VIEWPORT_HEIGHT / rows
-    
-    # Usa la dimensione più piccola per mantenere i nodi quadrati
-    exact_size = min(size_for_width, size_for_height)
-    
-    # Calcola quanto spazio verrebbe sprecato con la dimensione standard
-    total_width_standard = cols * exact_size
-    total_height_standard = rows * exact_size
-    wasted_width = VIEWPORT_WIDTH - total_width_standard
-    wasted_height = VIEWPORT_HEIGHT - total_height_standard
-    wasted_percent_w = (wasted_width / VIEWPORT_WIDTH) * 100
-    wasted_percent_h = (wasted_height / VIEWPORT_HEIGHT) * 100
-    
-    # Applica ottimizzazione SOLO se c'è uno squilibrio significativo
-    # (una dimensione spreca molto più dell'altra)
-    max_wasted = max(wasted_percent_w, wasted_percent_h)
-    min_wasted = min(wasted_percent_w, wasted_percent_h)
-    
-    # Se la differenza di spreco è > 10% E lo spreco massimo è > 10%, ottimizza
-    if (max_wasted - min_wasted) > 10 and max_wasted > 10:
-        if wasted_height > wasted_width:
-            # La larghezza è il limite (mappa alta e stretta)
-            # Aumenta la dimensione per riempire il 95% dell'altezza
-            target_size = (VIEWPORT_HEIGHT * 0.95) / rows
-            # Ma non superare troppo la larghezza disponibile (max 130%)
-            if (cols * target_size) <= VIEWPORT_WIDTH * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa alta/stretta, spazio sprecato H={wasted_percent_h:.1f}% W={wasted_percent_w:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa alta/stretta, ma aumento creerebbe troppo overflow in larghezza")
-        else:
-            # L'altezza è il limite (mappa larga e bassa)
-            # Aumenta la dimensione per riempire il 95% della larghezza
-            target_size = (VIEWPORT_WIDTH * 0.95) / cols
-            # Ma non superare troppo l'altezza disponibile (max 130%)
-            if (rows * target_size) <= VIEWPORT_HEIGHT * 1.3:
-                exact_size = target_size
-                print(f"Debug: Mappa larga/bassa, spazio sprecato W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%, aumento a {exact_size:.2f}px")
-            else:
-                print(f"Debug: Mappa larga/bassa, ma aumento creerebbe troppo overflow in altezza")
-    else:
-        print(f"Debug: Mappa bilanciata (spreco W={wasted_percent_w:.1f}% H={wasted_percent_h:.1f}%), uso dimensione standard")
-    
-    # Verifica dimensione minima
-    if exact_size >= MIN_NODE_SIZE:
-        # Arrotondamento intelligente
-        if max_wasted > min_wasted + 10:
-            # Mappa sbilanciata - arrotonda per eccesso per riempire
-            node_size = math.ceil(exact_size)
-        else:
-            # Mappa bilanciata - cerca la dimensione ottimale
-            node_size_floor = math.floor(exact_size)
-            node_size_ceil = math.ceil(exact_size)
-            
-            # Calcola utilizzo con entrambe le dimensioni
-            usage_floor = max((cols * node_size_floor) / VIEWPORT_WIDTH, 
-                            (rows * node_size_floor) / VIEWPORT_HEIGHT)
-            usage_ceil = max((cols * node_size_ceil) / VIEWPORT_WIDTH,
-                           (rows * node_size_ceil) / VIEWPORT_HEIGHT)
-            
-            # Strategia diversa in base alla grandezza della mappa
-            is_large_map = max(rows, cols) >= 100
-            
-            if is_large_map:
-                # Mappa grande: preferisci riempire, tollera più overflow
-                if usage_ceil <= 1.10:
-                    node_size = node_size_ceil
-                    print(f"Debug: Mappa grande, uso ceil (utilizzo {usage_ceil*100:.1f}%)")
-                elif usage_floor < 0.92:
-                    node_size = node_size_ceil
-                    print(f"Debug: Mappa grande, uso ceil per evitare spreco (floor {usage_floor*100:.1f}%)")
-                else:
-                    node_size = node_size_floor
-                    print(f"Debug: Mappa grande, uso floor (utilizzo {usage_floor*100:.1f}%)")
-            else:
-                # Mappa piccola/media: preferisci precisione, limita overflow
-                if usage_ceil <= 1.03:
-                    # Overflow minimo (<=3%) → accettabile
-                    node_size = node_size_ceil
-                    print(f"Debug: Mappa piccola, uso ceil (overflow minimo {usage_ceil*100:.1f}%)")
-                elif usage_floor >= 0.95:
-                    # Floor riempie bene (>=95%) → preferiscilo per evitare scroll
-                    node_size = node_size_floor
-                    print(f"Debug: Mappa piccola, uso floor per evitare scroll (utilizzo {usage_floor*100:.1f}%)")
-                elif abs(usage_floor - 1.0) < abs(usage_ceil - 1.0):
-                    # Floor più vicino al 100%
-                    node_size = node_size_floor
-                    print(f"Debug: Mappa piccola, floor più vicino al 100% ({usage_floor*100:.1f}%)")
-                else:
-                    node_size = node_size_ceil
-                    print(f"Debug: Mappa piccola, ceil come compromesso ({usage_ceil*100:.1f}%)")
-        
-        total_width = cols * node_size
-        total_height = rows * node_size
-        
-        # Per mappe bilanciate max 110%, per sbilanciate max 130%
-        max_overflow = 1.10 if max_wasted <= min_wasted + 10 else 1.3
-        if total_width > VIEWPORT_WIDTH * max_overflow or total_height > VIEWPORT_HEIGHT * max_overflow:
-            node_size -= 1
-            total_width = cols * node_size
-            total_height = rows * node_size
-            print(f"Debug: Ridotto a {node_size} per rispettare overflow max {max_overflow*100:.0f}%")
-        
-        node_width = node_height = node_size
-        
-        aspect_ratio = max(cols/rows, rows/cols)
-        print(f"Debug: Griglia {rows}x{cols} (aspect ratio: {aspect_ratio:.2f})")
-        print(f"Debug: Dimensione calcolata: {exact_size:.2f}px")
-        print(f"Debug: Dimensione finale (quadrata): {node_size}x{node_size}")
-        print(f"Debug: Totale griglia: {total_width}x{total_height}")
-        print(f"Debug: Viewport: {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
-        print(f"Debug: Utilizzo: {(total_width/VIEWPORT_WIDTH)*100:.1f}% width, {(total_height/VIEWPORT_HEIGHT)*100:.1f}% height")
-    else:
-        # Per mappe molto grandi, usa dimensione minima
-        node_width = node_height = MIN_NODE_SIZE
-        print(f"Debug: Griglia molto grande {rows}x{cols}, usando dimensione minima {MIN_NODE_SIZE}")
-    
-    # Crea griglia con nodi uniformi
-    grid = []
-    for i in range(rows):
-        grid.append([])
-        for j in range(cols):
-            node = Node(i, j, node_width, node_height, rows, cols)
-            grid[i].append(node)
-    
-    return grid, node_width, node_height
-'''
+        # Ripristina dimensioni originali
+        grid, node_width, node_height = make_grid(rows, cols)
+        return grid, node_width, node_height
+
 def adjust_viewport_to_grid(rows, cols, node_size):
-    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
+    """Adatta il viewport alla griglia se possibile"""
     global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
+    
+    # Non ridimensionare se siamo in fullscreen
+    if is_fullscreen:
+        return False
     
     grid_width = cols * node_size
     grid_height = rows * node_size
     
-    # Finestra massima consentita (es. schermo tipico)
     MAX_WINDOW_WIDTH = 1920
     MAX_WINDOW_HEIGHT = 1080
-    
-    # Finestra minima consentita
     MIN_WINDOW_SIZE = 400
     
-    # Calcola nuove dimensioni viewport
     new_width = VIEWPORT_WIDTH
     new_height = VIEWPORT_HEIGHT
     
-    # Se la griglia è più piccola del viewport, riduci la finestra
     if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
         new_width = min(grid_width, MAX_WINDOW_WIDTH)
     
     if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
         new_height = min(grid_height, MAX_WINDOW_HEIGHT)
     
-    # Aggiorna viewport se necessario
     if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
         VIEWPORT_WIDTH = new_width
         VIEWPORT_HEIGHT = new_height
@@ -517,75 +308,62 @@ def adjust_viewport_to_grid(rows, cols, node_size):
     return False
 
 def make_grid(rows, cols):
-    """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
-    import math
-    
-    # Calcola dimensione base per mantenere i nodi quadrati
+    """Crea una griglia di nodi QUADRATI ottimizzata"""
     size_for_width = VIEWPORT_WIDTH / cols
     size_for_height = VIEWPORT_HEIGHT / rows
     exact_size = min(size_for_width, size_for_height)
     
-    # Verifica dimensione minima
     if exact_size < MIN_NODE_SIZE:
         node_size = MIN_NODE_SIZE
         print(f"Debug: Griglia molto grande {rows}×{cols}, usando dimensione minima {MIN_NODE_SIZE}")
     else:
-        # Calcola spreco con entrambe le opzioni
         node_size_floor = math.floor(exact_size)
         node_size_ceil = math.ceil(exact_size)
         
-        # Calcola dimensioni totali
         width_floor = cols * node_size_floor
         height_floor = rows * node_size_floor
         width_ceil = cols * node_size_ceil
         height_ceil = rows * node_size_ceil
         
-        # Calcola utilizzo viewport (0-1 = sottoutilizzo, >1 = overflow)
         usage_floor_w = width_floor / VIEWPORT_WIDTH
         usage_floor_h = height_floor / VIEWPORT_HEIGHT
         usage_ceil_w = width_ceil / VIEWPORT_WIDTH
         usage_ceil_h = height_ceil / VIEWPORT_HEIGHT
         
-        # Spreco totale = somma degli spazi vuoti sui due assi
         waste_floor = max(0, 1 - usage_floor_w) + max(0, 1 - usage_floor_h)
         waste_ceil = max(0, 1 - usage_ceil_w) + max(0, 1 - usage_ceil_h)
         
-        # Overflow massimo
         overflow_floor = max(usage_floor_w, usage_floor_h)
         overflow_ceil = max(usage_ceil_w, usage_ceil_h)
         
-        # LOGICA DI SCELTA: privilegia riempimento ma rispetta limiti
-        MAX_OVERFLOW = 1.05  # Massimo 5% di overflow
-        MIN_USAGE = 0.90     # Almeno 90% di utilizzo
-        
-        # Preferisci ceil se:
-        # 1. Non supera il 5% di overflow, E
-        # 2. Riduce significativamente lo spreco (almeno 5%)
-        if overflow_ceil <= MAX_OVERFLOW and waste_floor - waste_ceil > 0.05:
+        # FULLSCREEN: usa sempre ceil per massimizzare riempimento
+        if is_fullscreen:
             node_size = node_size_ceil
-            reason = f"ceil per riempire meglio (spreco: floor={waste_floor*100:.1f}% vs ceil={waste_ceil*100:.1f}%)"
-        
-        # Altrimenti usa ceil solo se floor spreca troppo
-        elif overflow_ceil <= MAX_OVERFLOW and (usage_floor_w < MIN_USAGE or usage_floor_h < MIN_USAGE):
-            node_size = node_size_ceil
-            reason = f"ceil perché floor sottoutilizza ({usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
-        
-        # Default: usa floor per sicurezza
+            reason = f"FULLSCREEN: uso ceil per riempire (utilizzo {usage_ceil_w*100:.1f}% × {usage_ceil_h*100:.1f}%)"
         else:
-            node_size = node_size_floor
-            if overflow_ceil > MAX_OVERFLOW:
-                reason = f"floor per evitare overflow (ceil→{overflow_ceil*100:.1f}%)"
+            # Modalità normale: limiti conservativi
+            MAX_OVERFLOW = 1.05
+            MIN_USAGE = 0.90
+            
+            if overflow_ceil <= MAX_OVERFLOW and waste_floor - waste_ceil > 0.05:
+                node_size = node_size_ceil
+                reason = f"ceil per riempire meglio (spreco: floor={waste_floor*100:.1f}% vs ceil={waste_ceil*100:.1f}%)"
+            elif overflow_ceil <= MAX_OVERFLOW and (usage_floor_w < MIN_USAGE or usage_floor_h < MIN_USAGE):
+                node_size = node_size_ceil
+                reason = f"ceil perché floor sottoutilizza ({usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
             else:
-                reason = f"floor per sicurezza (utilizzo {usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+                node_size = node_size_floor
+                if overflow_ceil > MAX_OVERFLOW:
+                    reason = f"floor per evitare overflow (ceil→{overflow_ceil*100:.1f}%)"
+                else:
+                    reason = f"floor per sicurezza (utilizzo {usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
         
         print(f"Debug: {reason}")
     
-    # Calcola dimensioni finali
     total_width = cols * node_size
     total_height = rows * node_size
     node_width = node_height = node_size
     
-    # Report finale
     usage_w = (total_width / VIEWPORT_WIDTH) * 100
     usage_h = (total_height / VIEWPORT_HEIGHT) * 100
     waste_w = max(0, VIEWPORT_WIDTH - total_width)
@@ -598,10 +376,10 @@ def make_grid(rows, cols):
     print(f"Debug: Utilizzo: {usage_w:.1f}% width, {usage_h:.1f}% height")
     print(f"Debug: Spreco: {waste_w}px width ({waste_w/VIEWPORT_WIDTH*100:.1f}%), {waste_h}px height ({waste_h/VIEWPORT_HEIGHT*100:.1f}%)")
     
-    # Adatta il viewport alla griglia se conviene
-    adjust_viewport_to_grid(rows, cols, node_size)
+    # Adatta viewport solo se non in fullscreen
+    if not is_fullscreen:
+        adjust_viewport_to_grid(rows, cols, node_size)
     
-    # Crea griglia con nodi uniformi
     grid = []
     for i in range(rows):
         grid.append([])
@@ -611,17 +389,13 @@ def make_grid(rows, cols):
     
     return grid, node_width, node_height
 
-
-
 def draw_grid(win, rows, cols, node_width, node_height, offset_x, offset_y):
     """Disegna la griglia"""
-    # Linee orizzontali
     for i in range(rows + 1):
         y = i * node_height - offset_y
         if -1 <= y <= VIEWPORT_HEIGHT + 1:
             pygame.draw.line(win, GREY, (0, y), (VIEWPORT_WIDTH, y))
     
-    # Linee verticali
     for j in range(cols + 1):
         x = j * node_width - offset_x
         if -1 <= x <= VIEWPORT_WIDTH + 1:
@@ -631,7 +405,6 @@ def draw(win, grid, rows, cols, node_width, node_height, offset_x, offset_y):
     """Funzione di disegno principale"""
     win.fill(BACKGROUND)
     
-    # Disegna solo i nodi visibili
     start_row = max(0, offset_y // node_height)
     end_row = min(rows, (offset_y + VIEWPORT_HEIGHT) // node_height + 1)
     start_col = max(0, offset_x // node_width)
@@ -648,7 +421,6 @@ def draw(win, grid, rows, cols, node_width, node_height, offset_x, offset_y):
 def get_clicked_position(pos, node_width, node_height, offset_x, offset_y):
     """Converte coordinate del mouse in posizione griglia"""
     x, y = pos
-    # Aggiusta per l'offset
     world_x = x + offset_x
     world_y = y + offset_y
     
@@ -666,23 +438,21 @@ def run_algorithm_thread(draw_func, grid, start, end):
 
 def main():
     """Funzione principale"""
-    global WIN, VIEWPORT_HEIGHT,VIEWPORT_WIDTH
-    WIN = pygame.display.set_mode((WIDTH, WIDTH))
-
-    pygame.display.set_caption("A* Algorithm")
+    global WIN, VIEWPORT_WIDTH, VIEWPORT_HEIGHT
+    
     pygame.init()
     
-    # Parametri iniziali
+    WIN = pygame.display.set_mode((WIDTH, WIDTH))
+    pygame.display.set_caption("A* Algorithm")
+    
     ROWS, COLS = 50, 50
     grid, node_width, node_height = make_grid(ROWS, COLS)
     
-    # Offset iniziali 
     total_width = COLS * node_width
     total_height = ROWS * node_height
     print(f"Debug main: viewport {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}, griglia totale {total_width}x{total_height}")
     print(f"Debug main: spazio inutilizzato: W={VIEWPORT_WIDTH-total_width}, H={VIEWPORT_HEIGHT-total_height}")
     
-    # Calcolo offset per centratura
     if total_width < VIEWPORT_WIDTH:
         offset_x = -(VIEWPORT_WIDTH - total_width) // 2
         print(f"Debug: Centratura X, offset = {offset_x}")
@@ -702,14 +472,13 @@ def main():
     running = True
     map_loaded = False
     
-    # Disegno iniziale
     draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
     
     clock = pygame.time.Clock()
-    needs_redraw = False  # Flag per gestire il ridisegno
+    needs_redraw = False
     
     while running:
-        clock.tick(60)  # Limita FPS per stabilità
+        clock.tick(60)
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -717,10 +486,8 @@ def main():
                 running = False
                 break
             
-            # Gestione tastiera
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and start and end and not algorithm_running:
-                    # Avvia algoritmo
                     for row in grid:
                         for node in row:
                             node.update_neighbors(grid)
@@ -732,13 +499,53 @@ def main():
                     thread.daemon = True
                     thread.start()
                 
+                # NUOVO: Toggle fullscreen con F11
+                elif event.key == pygame.K_F11 and not algorithm_running:
+                    # Salva stato start/end
+                    old_start_pos = start.get_pos() if start else None
+                    old_end_pos = end.get_pos() if end else None
+                    
+                    # Toggle fullscreen e ricalcola griglia
+                    result = toggle_fullscreen(ROWS, COLS, node_width)
+                    if result:
+                        grid, node_width, node_height = result
+                        
+                        # Ripristina start/end
+                        if old_start_pos:
+                            r, c = old_start_pos
+                            start = grid[r][c]
+                            start.make_start()
+                        else:
+                            start = None
+                            
+                        if old_end_pos:
+                            r, c = old_end_pos
+                            end = grid[r][c]
+                            end.make_end()
+                        else:
+                            end = None
+                        
+                        # Ricalcola offset per centratura
+                        total_width = COLS * node_width
+                        total_height = ROWS * node_height
+                        
+                        if total_width < VIEWPORT_WIDTH:
+                            offset_x = -(VIEWPORT_WIDTH - total_width) // 2
+                        else:
+                            offset_x = 0
+                            
+                        if total_height < VIEWPORT_HEIGHT:
+                            offset_y = -(VIEWPORT_HEIGHT - total_height) // 2
+                        else:
+                            offset_y = 0
+                        
+                        needs_redraw = True
+                
                 elif event.key == pygame.K_m and not algorithm_running:
-                    # Carica mappa
                     result = load_map(MAP)
                     if result[0] is not None:
                         grid, ROWS, COLS, node_width, node_height = result
                         
-                        # Ricalcola offset per centratura
                         total_width = COLS * node_width
                         total_height = ROWS * node_height
                         
@@ -758,7 +565,6 @@ def main():
                         needs_redraw = True
                 
                 elif event.key == pygame.K_c and not algorithm_running:
-                    # Reset con centratura
                     start = None
                     end = None
                     grid, node_width, node_height = make_grid(ROWS, COLS)
@@ -778,12 +584,49 @@ def main():
                         offset_y = 0
                     
                     needs_redraw = True
+                
+                # NUOVO: ESC per uscire da fullscreen
+                elif event.key == pygame.K_ESCAPE and is_fullscreen:
+                    old_start_pos = start.get_pos() if start else None
+                    old_end_pos = end.get_pos() if end else None
+                    
+                    result = toggle_fullscreen(ROWS, COLS, node_width)
+                    if result:
+                        grid, node_width, node_height = result
+                        
+                        if old_start_pos:
+                            r, c = old_start_pos
+                            start = grid[r][c]
+                            start.make_start()
+                        else:
+                            start = None
+                            
+                        if old_end_pos:
+                            r, c = old_end_pos
+                            end = grid[r][c]
+                            end.make_end()
+                        else:
+                            end = None
+                        
+                        total_width = COLS * node_width
+                        total_height = ROWS * node_height
+                        
+                        if total_width < VIEWPORT_WIDTH:
+                            offset_x = -(VIEWPORT_WIDTH - total_width) // 2
+                        else:
+                            offset_x = 0
+                            
+                        if total_height < VIEWPORT_HEIGHT:
+                            offset_y = -(VIEWPORT_HEIGHT - total_height) // 2
+                        else:
+                            offset_y = 0
+                        
+                        needs_redraw = True
         
-        # Gestione mouse continua (fuori dal loop eventi per catturare anche quando tieni premuto)
         if not algorithm_running:
             mouse_buttons = pygame.mouse.get_pressed()
             
-            if mouse_buttons[0]:  # Tasto sinistro premuto
+            if mouse_buttons[0]:
                 pos = pygame.mouse.get_pos()
                 row, col = get_clicked_position(pos, node_width, node_height, offset_x, offset_y)
                 
@@ -802,7 +645,7 @@ def main():
                         node.make_obstacle()
                         needs_redraw = True
             
-            elif mouse_buttons[2]:  # Tasto destro premuto
+            elif mouse_buttons[2]:
                 pos = pygame.mouse.get_pos()
                 row, col = get_clicked_position(pos, node_width, node_height, offset_x, offset_y)
                 
@@ -825,7 +668,6 @@ def main():
                     if changed:
                         needs_redraw = True
             
-            # Gestione scroll continuo
             keys = pygame.key.get_pressed()
             total_width = COLS * node_width
             total_height = ROWS * node_height
@@ -854,7 +696,6 @@ def main():
                         offset_y = new_offset_y
                         needs_redraw = True
         
-        # Ridisegna solo quando necessario
         if needs_redraw:
             draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
             needs_redraw = False
