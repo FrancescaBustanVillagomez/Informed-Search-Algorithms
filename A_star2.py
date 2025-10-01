@@ -212,7 +212,17 @@ def algorithm(draw_func,grid,start,end):
             pygame.time.delay(10)   #piccola pausa per vedere animazione
 
     return False   
-        
+def dls(node,end,limit,parent):
+    if limit == 0 and node == end:
+        return True
+    if limit > 0:
+        for neighbor in node.neighbors:
+            parent[neighbor]= node
+            if dls(neighbor,end,limit-1,parent):
+                return True
+            
+
+
 
 def load_map(map_path):
     try:
