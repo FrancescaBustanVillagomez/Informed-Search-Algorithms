@@ -6,7 +6,7 @@ import threading   # per separere l'esecuzione e la gestione della pagina
 import sys #serve per interrompere il programma
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MAP = os.path.join(BASE_DIR, "mappe", "arena.map")
+MAP = os.path.join(BASE_DIR, "mappe", "den009d.map")
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 # Mappe piccole
