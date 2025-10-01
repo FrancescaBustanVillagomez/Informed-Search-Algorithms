@@ -7,7 +7,7 @@ import sys
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe", "orz302d.map")  # percorso completo per trovare la mappa
+MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 # Mappe piccole

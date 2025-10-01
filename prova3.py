@@ -10,8 +10,9 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")
 
 WIDTH = 800
-WIN = pygame.display.set_mode((WIDTH, WIDTH))
-pygame.display.set_caption("A* Algorithm")
+#WIN = pygame.display.set_mode((WIDTH, WIDTH))
+WIN = None
+#pygame.display.set_caption("A* Algorithm")
 
 # Parametri viewport fissi
 VIEWPORT_WIDTH = WIDTH
@@ -346,7 +347,7 @@ def load_map(map_path):
     
     return grid, node_width, node_height
 '''
-
+'''
 def make_grid(rows, cols):
     """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
     import math
@@ -479,6 +480,137 @@ def make_grid(rows, cols):
             grid[i].append(node)
     
     return grid, node_width, node_height
+'''
+def adjust_viewport_to_grid(rows, cols, node_size):
+    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
+    global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
+    
+    grid_width = cols * node_size
+    grid_height = rows * node_size
+    
+    # Finestra massima consentita (es. schermo tipico)
+    MAX_WINDOW_WIDTH = 1920
+    MAX_WINDOW_HEIGHT = 1080
+    
+    # Finestra minima consentita
+    MIN_WINDOW_SIZE = 400
+    
+    # Calcola nuove dimensioni viewport
+    new_width = VIEWPORT_WIDTH
+    new_height = VIEWPORT_HEIGHT
+    
+    # Se la griglia è più piccola del viewport, riduci la finestra
+    if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
+        new_width = min(grid_width, MAX_WINDOW_WIDTH)
+    
+    if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
+        new_height = min(grid_height, MAX_WINDOW_HEIGHT)
+    
+    # Aggiorna viewport se necessario
+    if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
+        VIEWPORT_WIDTH = new_width
+        VIEWPORT_HEIGHT = new_height
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        print(f"Debug: Viewport ridimensionato a {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
+        return True
+    
+    return False
+
+def make_grid(rows, cols):
+    """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
+    import math
+    
+    # Calcola dimensione base per mantenere i nodi quadrati
+    size_for_width = VIEWPORT_WIDTH / cols
+    size_for_height = VIEWPORT_HEIGHT / rows
+    exact_size = min(size_for_width, size_for_height)
+    
+    # Verifica dimensione minima
+    if exact_size < MIN_NODE_SIZE:
+        node_size = MIN_NODE_SIZE
+        print(f"Debug: Griglia molto grande {rows}×{cols}, usando dimensione minima {MIN_NODE_SIZE}")
+    else:
+        # Calcola spreco con entrambe le opzioni
+        node_size_floor = math.floor(exact_size)
+        node_size_ceil = math.ceil(exact_size)
+        
+        # Calcola dimensioni totali
+        width_floor = cols * node_size_floor
+        height_floor = rows * node_size_floor
+        width_ceil = cols * node_size_ceil
+        height_ceil = rows * node_size_ceil
+        
+        # Calcola utilizzo viewport (0-1 = sottoutilizzo, >1 = overflow)
+        usage_floor_w = width_floor / VIEWPORT_WIDTH
+        usage_floor_h = height_floor / VIEWPORT_HEIGHT
+        usage_ceil_w = width_ceil / VIEWPORT_WIDTH
+        usage_ceil_h = height_ceil / VIEWPORT_HEIGHT
+        
+        # Spreco totale = somma degli spazi vuoti sui due assi
+        waste_floor = max(0, 1 - usage_floor_w) + max(0, 1 - usage_floor_h)
+        waste_ceil = max(0, 1 - usage_ceil_w) + max(0, 1 - usage_ceil_h)
+        
+        # Overflow massimo
+        overflow_floor = max(usage_floor_w, usage_floor_h)
+        overflow_ceil = max(usage_ceil_w, usage_ceil_h)
+        
+        # LOGICA DI SCELTA: privilegia riempimento ma rispetta limiti
+        MAX_OVERFLOW = 1.05  # Massimo 5% di overflow
+        MIN_USAGE = 0.90     # Almeno 90% di utilizzo
+        
+        # Preferisci ceil se:
+        # 1. Non supera il 5% di overflow, E
+        # 2. Riduce significativamente lo spreco (almeno 5%)
+        if overflow_ceil <= MAX_OVERFLOW and waste_floor - waste_ceil > 0.05:
+            node_size = node_size_ceil
+            reason = f"ceil per riempire meglio (spreco: floor={waste_floor*100:.1f}% vs ceil={waste_ceil*100:.1f}%)"
+        
+        # Altrimenti usa ceil solo se floor spreca troppo
+        elif overflow_ceil <= MAX_OVERFLOW and (usage_floor_w < MIN_USAGE or usage_floor_h < MIN_USAGE):
+            node_size = node_size_ceil
+            reason = f"ceil perché floor sottoutilizza ({usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+        
+        # Default: usa floor per sicurezza
+        else:
+            node_size = node_size_floor
+            if overflow_ceil > MAX_OVERFLOW:
+                reason = f"floor per evitare overflow (ceil→{overflow_ceil*100:.1f}%)"
+            else:
+                reason = f"floor per sicurezza (utilizzo {usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+        
+        print(f"Debug: {reason}")
+    
+    # Calcola dimensioni finali
+    total_width = cols * node_size
+    total_height = rows * node_size
+    node_width = node_height = node_size
+    
+    # Report finale
+    usage_w = (total_width / VIEWPORT_WIDTH) * 100
+    usage_h = (total_height / VIEWPORT_HEIGHT) * 100
+    waste_w = max(0, VIEWPORT_WIDTH - total_width)
+    waste_h = max(0, VIEWPORT_HEIGHT - total_height)
+    
+    aspect_ratio = max(cols/rows, rows/cols)
+    print(f"Debug: Griglia {rows}×{cols} (aspect ratio: {aspect_ratio:.2f})")
+    print(f"Debug: Dimensione calcolata: {exact_size:.2f}px → finale: {node_size}×{node_size}px")
+    print(f"Debug: Totale griglia: {total_width}×{total_height} vs viewport {VIEWPORT_WIDTH}×{VIEWPORT_HEIGHT}")
+    print(f"Debug: Utilizzo: {usage_w:.1f}% width, {usage_h:.1f}% height")
+    print(f"Debug: Spreco: {waste_w}px width ({waste_w/VIEWPORT_WIDTH*100:.1f}%), {waste_h}px height ({waste_h/VIEWPORT_HEIGHT*100:.1f}%)")
+    
+    # Adatta il viewport alla griglia se conviene
+    adjust_viewport_to_grid(rows, cols, node_size)
+    
+    # Crea griglia con nodi uniformi
+    grid = []
+    for i in range(rows):
+        grid.append([])
+        for j in range(cols):
+            node = Node(i, j, node_width, node_height, rows, cols)
+            grid[i].append(node)
+    
+    return grid, node_width, node_height
+
 
 
 def draw_grid(win, rows, cols, node_width, node_height, offset_x, offset_y):
@@ -534,6 +666,10 @@ def run_algorithm_thread(draw_func, grid, start, end):
 
 def main():
     """Funzione principale"""
+    global WIN, VIEWPORT_HEIGHT,VIEWPORT_WIDTH
+    WIN = pygame.display.set_mode((WIDTH, WIDTH))
+
+    pygame.display.set_caption("A* Algorithm")
     pygame.init()
     
     # Parametri iniziali
