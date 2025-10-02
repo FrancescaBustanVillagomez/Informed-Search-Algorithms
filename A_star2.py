@@ -4,7 +4,7 @@ import heapq
 import os
 import threading
 import sys
-
+from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
 MAP = os.path.join(BASE_DIR, "mappe", "rmtst.map")  # percorso completo per trovare la mappa
@@ -29,6 +29,7 @@ MAP = os.path.join(BASE_DIR, "mappe", "rmtst.map")  # percorso completo per trov
 #MAP = "mappe2/lt_foundry_n.map" 92*109
 #MAP = "lgt101d.map" 28*44
 WIDTH = 800
+
 WIN = pygame.display.set_mode((WIDTH, WIDTH))
 pygame.display.set_caption("A* Algorithm")
 
@@ -42,6 +43,8 @@ MIN_NODE_SIZE = 5  #dim minima dei nodi in pixel
 # Variabili globali
 stop_requested = False   # serve al thread 
 algorithm_running = False
+finished = False
+
 
 
 # Colori
@@ -63,7 +66,7 @@ class Node:
         self.tot_rows=tot_rows   # num tot di righe e colonne della griglia
         self.tot_cols= tot_cols
         self.width=width  #larghezza in pixel di ogni nodo
-        self.heigth = height
+        self.height = height
         self.x = col * width    
         self.y = row * height
         self.color=BACKGROUND    
@@ -112,7 +115,7 @@ class Node:
         draw_x = self.x - offset_x
         draw_y = self.y - offset_y
         if(-self.width <= draw_x <= VIEWPORT_WIDTH and -self.y <= draw_y <= VIEWPORT_HEIGHT):
-            pygame.draw.rect(win,self.color,(draw_x, draw_y,self.width,self.heigth))
+            pygame.draw.rect(win,self.color,(draw_x, draw_y,self.width,self.height))
         
         
     def update_neighbors(self,grid):
@@ -212,14 +215,42 @@ def algorithm(draw_func,grid,start,end):
             pygame.time.delay(10)   #piccola pausa per vedere animazione
 
     return False   
-def dls(node,end,limit,parent):
-    if limit == 0 and node == end:
+def ida_star(start,end):
+    limite = h(start,end)
+    path = deque()
+    path.append(start)
+    path_copy = set()
+    while True:
+        ris = search(path,path_copy,0,limite,end)
+        if ris == True:
+            return path,limite
+        if ris == float("inf"):
+            return False
+        limite = ris
+    
+def search(path,path_copy,g_score,limite,end):
+    node = path[-1]
+
+    path_copy.remove(node)
+    f_score =  g_score +h(node,end)
+    if f_score > limite:
+        return f_score
+    if node.is_end():
         return True
-    if limit > 0:
-        for neighbor in node.neighbors:
-            parent[neighbor]= node
-            if dls(neighbor,end,limit-1,parent):
+    min = float("inf")
+    for neighbor in node.neighbors:
+        if neighbor not in path_copy:
+            path.append(neighbor)
+            path_copy.add(neighbor)
+            ris = search(path,path_copy,g_score+1,limite,end)
+            if ris == True:
                 return True
+            if ris < min:
+                min = ris
+            path.pop()
+            path_copy.remove(neighbor)
+
+    return min
             
 
 
@@ -273,7 +304,7 @@ def load_map(map_path):
         print(f"Errore nel caricamento della mappa: {e}")
         return None, 0, 0, 0, 0
 
-
+'''
 def adjust_viewport_to_grid(rows, cols, node_size):
     """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
     global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
@@ -308,6 +339,52 @@ def adjust_viewport_to_grid(rows, cols, node_size):
         return True
     
     return False
+'''
+
+def adjust_viewport_to_grid(rows, cols, node_size):
+    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
+    global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
+    
+    grid_width = cols * node_size
+    grid_height = rows * node_size
+    
+    # Finestra massima consentita
+    MAX_WINDOW_WIDTH = 1920
+    MAX_WINDOW_HEIGHT = 1080
+    
+    # Finestra minima consentita
+    MIN_WINDOW_SIZE = 250
+    
+    # Calcola nuove dimensioni viewport
+    new_width = VIEWPORT_WIDTH
+    new_height = VIEWPORT_HEIGHT
+    
+    # MODIFICA CHIAVE: valuta larghezza e altezza INDIPENDENTEMENTE
+    # Riduci larghezza solo se griglia più stretta E >= minimo
+    if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
+        new_width = min(grid_width, MAX_WINDOW_WIDTH)
+    # Altrimenti mantieni larghezza corrente o aumenta fino al massimo se serve scroll
+    elif grid_width > VIEWPORT_WIDTH:
+        new_width = min(VIEWPORT_WIDTH, MAX_WINDOW_WIDTH)
+    
+    # Riduci altezza solo se griglia più bassa E >= minimo
+    if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
+        new_height = min(grid_height, MAX_WINDOW_HEIGHT)
+    # Altrimenti mantieni altezza corrente
+    elif grid_height > VIEWPORT_HEIGHT:
+        new_height = min(VIEWPORT_HEIGHT, MAX_WINDOW_HEIGHT)
+    
+    # Aggiorna viewport se necessario
+    if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
+        VIEWPORT_WIDTH = new_width
+        VIEWPORT_HEIGHT = new_height
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        print(f"Debug: Viewport ridimensionato a {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
+        return True
+    
+    return False
+
+
 
 def make_grid(rows, cols):
     """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
@@ -392,7 +469,7 @@ def make_grid(rows, cols):
     print(f"Debug: Spreco: {waste_w}px width ({waste_w/VIEWPORT_WIDTH*100:.1f}%), {waste_h}px height ({waste_h/VIEWPORT_HEIGHT*100:.1f}%)")
     
     # Adatta il viewport alla griglia se conviene
-    adjust_viewport_to_grid(rows, cols, node_size)
+    #adjust_viewport_to_grid(rows, cols, node_size)
     
     grid = []
     for i in range(rows):  # fai i numeri da 0 a rows-1
@@ -446,14 +523,17 @@ def get_clicked_position(pos,rows,cols,node_width,node_height,offset_x,offset_y)
     return  row,col
 
 def run_algorithm_thread(draw_func,grid,start,end):
-    global algorithm_running
+    global algorithm_running, finished
     try:
         algorithm(draw_func,grid,start,end)
     finally:
+        finished = True
         algorithm_running = False
+    
 
 
 def main():
+    global WIN, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, stop_requested, algorithm_running, finished
     pygame.init()
     ROWS = 50 #valore di default cambiabile
     COLS = 50
@@ -475,7 +555,7 @@ def main():
         offset_y = 0
     
 
-    global stop_requested, algorithm_running
+    
     algorithm_running = False
     start=None
     end=None
@@ -496,23 +576,26 @@ def main():
                 break
 
             if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_SPACE and start and end and not algorithm_running:
+                    if event.key == pygame.K_SPACE and start and end and not algorithm_running and not finished:
                         for row in grid:
                             for node in row:
                                 node.update_neighbors(grid)
                         algorithm_running=True
                         stop_requested = False
+                        
                         draw_func = lambda: draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
                         thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end))
                         thread.daemon = True
                         thread.start()                        
                     
-                    elif event.key == pygame.K_m and not algorithm_running:
+                    elif event.key == pygame.K_m and not finished and not algorithm_running:
                          # Carica mappa
                         result = load_map(MAP)
                         if result[0] is not None:
                             grid, ROWS, COLS, node_width, node_height = result
                             
+                            print(f"DEBUG: node_width={node_width}, node_height={node_height}")
+                            adjust_viewport_to_grid(ROWS, COLS, node_width)
                             # Ricalcola offset per centratura
                             total_width = COLS * node_width
                             total_height = ROWS * node_height
@@ -535,11 +618,19 @@ def main():
                             map_loaded = True
                             needs_redraw = True
                     
-                    elif event.key == pygame.K_c and not algorithm_running:
+                    elif event.key == pygame.K_c and not algorithm_running and  (finished or map_loaded):
+                        
+                        VIEWPORT_WIDTH = WIDTH
+                        VIEWPORT_HEIGHT = WIDTH
+                        WIN = pygame.display.set_mode((VIEWPORT_WIDTH,VIEWPORT_HEIGHT))
+                        ROWS = 50
+                        COLS = 50
                         start = None
                         end = None 
                         grid, node_width, node_height = make_grid(ROWS,COLS)
                         map_loaded = False
+                        algorithm_running = False
+                        finished= False
                         
                         total_width = COLS * node_width
                         total_height = ROWS * node_height
@@ -554,9 +645,10 @@ def main():
                         else:
                             offset_y = 0
 
+                        draw(WIN, grid, ROWS, COLS,node_width, node_height, offset_x, offset_y)
+                        #needs_redraw = True
                         
-                        needs_redraw = True
-
+                        
         if not algorithm_running:
             if pygame.mouse.get_pressed()[0]:     # get_pressed è una funzione che restituisce una tupla(True,false, true) o qualsiasi combainzione che ci dice che il puls. sinistro /centrale /destro sono stati cliccati  e mettendo [0] significa che mi sto interessando a quello sinistro
                 pos= pygame.mouse.get_pos()  
