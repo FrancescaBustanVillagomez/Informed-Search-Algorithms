@@ -7,7 +7,7 @@ import sys
 from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe", "rmtst.map")  # percorso completo per trovare la mappa
+MAP = os.path.join(BASE_DIR, "mappe", "arena.map")  # percorso completo per trovare la mappa
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 # Mappe piccole
@@ -215,41 +215,62 @@ def algorithm(draw_func,grid,start,end):
             pygame.time.delay(10)   #piccola pausa per vedere animazione
 
     return False   
-def ida_star(start,end):
-    limite = h(start,end)
+
+def draw_path_stack(path,draw_func):
+    for node in reversed(path):
+        if not node.is_start() and node.is_end():
+            node.make_path()
+        draw_func()
+
+
+
+
+
+def ida_star(start,end,draw_func):
+    global stop_requested
+    limite = h(start.get_pos(),end.get_pos())
     path = deque()
     path.append(start)
     path_copy = set()
-    while True:
-        ris = search(path,path_copy,0,limite,end)
+    path_copy.add(start)
+    while not stop_requested:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False   # algorithm non piu respondabile di chiusura di finestra 
+        
+
+        ris = search(path,path_copy,0,limite,end,draw_func)
         if ris == True:
-            return path,limite
+            draw_path_stack(path,draw_func)
+            end.make_end()
+            start.make_start()
         if ris == float("inf"):
             return False
         limite = ris
     
-def search(path,path_copy,g_score,limite,end):
+def search(path,path_copy,g_score,limite,end,draw_func):
     node = path[-1]
-
-    path_copy.remove(node)
-    f_score =  g_score +h(node,end)
+    f_score =  g_score +h(node.get_pos(),end.get_pos())
     if f_score > limite:
         return f_score
     if node.is_end():
         return True
     min = float("inf")
+    node.make_frontier()
+    draw_func()
     for neighbor in node.neighbors:
         if neighbor not in path_copy:
             path.append(neighbor)
             path_copy.add(neighbor)
-            ris = search(path,path_copy,g_score+1,limite,end)
+            ris = search(path,path_copy,g_score+1,limite,end,draw_func)
             if ris == True:
                 return True
             if ris < min:
                 min = ris
             path.pop()
-            path_copy.remove(neighbor)
-
+            path_copy.discard(neighbor)
+    node.make_explored()
+    draw_func()
     return min
             
 
@@ -525,7 +546,8 @@ def get_clicked_position(pos,rows,cols,node_width,node_height,offset_x,offset_y)
 def run_algorithm_thread(draw_func,grid,start,end):
     global algorithm_running, finished
     try:
-        algorithm(draw_func,grid,start,end)
+        #algorithm(draw_func,grid,start,end)
+        ida_star(start,end,draw_func)
     finally:
         finished = True
         algorithm_running = False

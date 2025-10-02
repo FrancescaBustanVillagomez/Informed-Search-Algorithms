@@ -215,6 +215,8 @@ def algorithm(draw_func,grid,start,end):
             pygame.time.delay(10)   #piccola pausa per vedere animazione
 
     return False   
+
+
 def ida_star(start,end):
     limite = h(start,end)
     path = deque()
