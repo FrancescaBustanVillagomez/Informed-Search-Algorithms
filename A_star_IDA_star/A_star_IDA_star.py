@@ -7,7 +7,7 @@ import sys
 from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe2", "lt_foundry_n.map")  # percorso completo per trovare la mappa
+MAP = os.path.join(BASE_DIR, "mappe", "lt_foundry_n.map")  # percorso completo per trovare la mappa
 #MAP = os.path.join(BASE_DIR, "mappe", "arena.map")  
 WIDTH = 800
 

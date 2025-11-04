@@ -7,7 +7,10 @@ import sys
 from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe", "arena.map")  # percorso completo per trovare la mappa
+#MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
+MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den401d.map")
+
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
 # Mappe piccole
@@ -44,6 +47,19 @@ MIN_NODE_SIZE = 5  #dim minima dei nodi in pixel
 stop_requested = False   # serve al thread 
 algorithm_running = False
 finished = False
+
+'''
+# Colori
+EXPLORED = (255,0, 0)  # rosso
+FRONTIER = (128, 255, 0) # verde
+BACKGROUND = (255, 255, 255)
+OBSTACLE = (0, 0, 0) 
+PATH = (204, 153, 255)   #violetto
+START = (255, 153, 51) # arancione
+GREY = (128, 128, 128)
+END = (153, 0, 76) # bordeux
+'''
+
 
 
 
@@ -218,37 +234,57 @@ def algorithm(draw_func,grid,start,end):
 
 def draw_path_stack(path,draw_func):
     for node in reversed(path):
-        if not node.is_start() and node.is_end():
+        if not node.is_start() and not node.is_end():
             node.make_path()
         draw_func()
+    pygame.time.delay(25)
 
 
 
 
-
-def ida_star(start,end,draw_func):
+def ida_star(start,end,draw_func,grid):
     global stop_requested
     limite = h(start.get_pos(),end.get_pos())
     path = deque()
     path.append(start)
     path_copy = set()
     path_copy.add(start)
+    iterazione = 0
     while not stop_requested:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False   # algorithm non piu respondabile di chiusura di finestra 
         
+        iterazione+=1
 
-        ris = search(path,path_copy,0,limite,end,draw_func)
+        print(f"IDA* iterazione {iterazione}, soglia f = {limite}")
+     
+        ris = search(path,path_copy,0,limite,end,draw_func,iterazione)
         if ris == True:
             draw_path_stack(path,draw_func)
             end.make_end()
             start.make_start()
+            return True
         if ris == float("inf"):
             return False
+        
+        
+        path.clear()
+        path.append(start)
+        path_copy.clear()
+        path_copy.add(start)
         limite = ris
+
+nodes_explored = 0
     
-def search(path,path_copy,g_score,limite,end,draw_func):
+def search(path,path_copy,g_score,limite,end,draw_func,iterazione):
+    global stop_requested,nodes_explored
+    nodes_explored+=1
+
+    if nodes_explored % 100 == 0:
+        print(nodes_explored)
+    if stop_requested:
+        return float("inf")
     node = path[-1]
     f_score =  g_score +h(node.get_pos(),end.get_pos())
     if f_score > limite:
@@ -256,21 +292,31 @@ def search(path,path_copy,g_score,limite,end,draw_func):
     if node.is_end():
         return True
     min = float("inf")
-    node.make_frontier()
-    draw_func()
+    if not node.is_start() and not node.is_end():
+        node.make_explored()
+        draw_func()
+        pygame.time.delay(15)
+    
     for neighbor in node.neighbors:
         if neighbor not in path_copy:
+            if not neighbor.is_end():
+                neighbor.make_frontier()
+                draw_func()
             path.append(neighbor)
             path_copy.add(neighbor)
-            ris = search(path,path_copy,g_score+1,limite,end,draw_func)
+            ris = search(path,path_copy,g_score+1,limite,end,draw_func,iterazione)
+            
             if ris == True:
                 return True
+            
             if ris < min:
                 min = ris
             path.pop()
             path_copy.discard(neighbor)
-    node.make_explored()
-    draw_func()
+    
+    if not node.is_start() and not node.is_end():
+        node.make_explored()
+        draw_func()
     return min
             
 
@@ -547,7 +593,10 @@ def run_algorithm_thread(draw_func,grid,start,end):
     global algorithm_running, finished
     try:
         #algorithm(draw_func,grid,start,end)
-        ida_star(start,end,draw_func)
+        ida_star(start,end,draw_func,grid)
+    except pygame.error:
+        return
+        
     finally:
         finished = True
         algorithm_running = False
