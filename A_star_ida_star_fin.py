@@ -371,10 +371,7 @@ def ara_star(draw_func,grid,start,end):
                 
                 if node.color == PATH and not node.is_start() and not node.is_end():
                    node.make_explored()
-                '''
-                elif node.is_in_frontier() or node.is_explored():
-                    node.reset()
-                '''
+        
         for node in new_frontier:
             count +=1
             new_f_value = calc_f_value(node,end,g_score,WEIGHT)
@@ -385,6 +382,7 @@ def ara_star(draw_func,grid,start,end):
                 node.make_frontier()
         
         draw_func()
+        pygame.time.delay(10)
         
         
         count_ref = [count]
