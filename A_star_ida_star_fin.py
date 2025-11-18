@@ -258,7 +258,9 @@ def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,p
         if not node.is_start() and not node.is_end():
             node.make_explored()
             
-        
+        draw_func()
+        pygame.time.delay(2)
+
         for neighbor in node.neighbors:
             temp_g_score = g_score[node] + 1
 
@@ -276,18 +278,21 @@ def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,p
                     frontier_track.add(neighbor)
                     if not neighbor.is_end() and not neighbor.is_start():
                         neighbor.make_frontier()
+                        draw_func()
+                        pygame.time.delay(2)
                 else:
                     incons.add(neighbor)
 
-        draw_func()
+        
     step_counter += 1
     '''
     if step_counter % 5 == 0:
         draw_func()
         pygame.time.delay(5)
     draw_func()
-    count_ref[0] = count
     '''
+    count_ref[0] = count
+    
     
     return
 
@@ -363,17 +368,19 @@ def ara_star(draw_func,grid,start,end):
 
         for row in grid:
             for node in row:
-                if node.is_in_frontier() or node.is_explored():
+                
+                if node.color == PATH and not node.is_start() and not node.is_end():
+                   node.make_explored()
+                '''
+                elif node.is_in_frontier() or node.is_explored():
                     node.reset()
-                elif node.color == PATH and not node.is_start() and not node.is_end():
-                   
-                    node.make_explored()
-
+                '''
         for node in new_frontier:
             count +=1
             new_f_value = calc_f_value(node,end,g_score,WEIGHT)
             heapq.heappush(frontier,(new_f_value,count,node))
             frontier_track.add(node)
+            
             if not node.is_start() and not node.is_end():
                 node.make_frontier()
         
@@ -404,7 +411,7 @@ def ara_star(draw_func,grid,start,end):
             draw_path(parent, end, draw_func)
             end.make_end()
             start.make_start()
-            draw_func()
+            #draw_func()
             #pygame.time.delay(1000)
     return True
 
