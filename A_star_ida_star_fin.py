@@ -4,6 +4,7 @@ import heapq
 import os
 import threading
 import sys
+import time
 from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
@@ -175,8 +176,12 @@ def draw_path(parent,node,draw_func):
             node.make_path()
         draw_func()
 
-def a_star(draw_func,grid,start,end):
+def a_star(draw_func,grid,start,end,benchamark):
     global stop_requested
+    
+    start_time = time.perf_counter()
+    nodes_expanded=0
+    
     count = 0 # serve per i tie breaker
     frontier = []
     heapq.heappush(frontier,((0,count,start)))  # sto mettendo f(n) , count e start
@@ -192,19 +197,28 @@ def a_star(draw_func,grid,start,end):
     step_counter = 0 #disegna solo ogni 5 step
 
     while frontier and not stop_requested:
-        
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False   # algorithm non piu respondabile di chiusura di finestra 
-        
+        if not benchamark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False   # algorithm non piu respondabile di chiusura di finestra 
+        nodes_expanded += 1
         node = heapq.heappop(frontier)[2]  
         frontier_track.remove(node)
 
         if node == end:
-            draw_path(parent,node,draw_func)
-            end.make_end()
-            start.make_start()
-            return True
+            #abbiamo funito quindi calcolo il runtime
+            runtime_ms = (time.perf_counter() - start_time) * 1000  # per trasformarli in millisecondi
+            if not benchamark and draw_func:
+                draw_path(parent,node,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            return{
+                "found" : True,
+                "runtime" :runtime_ms,
+                "nodes" : nodes_expanded,
+                "cost" : g_score[end] 
+            }
         
         for neighbor in node.neighbors:
             temp_g_score = g_score[node]+1
@@ -217,20 +231,20 @@ def a_star(draw_func,grid,start,end):
                     count+=1
                     heapq.heappush(frontier,(f_score[neighbor],count,neighbor))
                     frontier_track.add(neighbor)
-                    if neighbor != end:
+                    if not benchamark and neighbor != end:
                         neighbor.make_frontier()
-        draw_func()
+        
+        if not benchamark and draw_func:
+            if node != start:
+                node.make_explored()
 
-        if node != start:
-            node.make_explored()
+            #diegno solo ogni N step per ridurre il flickering
+            step_counter += 1
+            if step_counter % 5 == 0:  # disegno ongi 5 step
+                draw_func()
+                #pygame.time.delay(10)   #piccola pausa per vedere animazione
 
-        #diegno solo ogni N step per ridurre il flickering
-        step_counter += 1
-        if step_counter % 5 == 0:  # disegno ongi 5 step
-            draw_func()
-            pygame.time.delay(10)   #piccola pausa per vedere animazione
-
-    return False   
+    return {"found" : False, "nodes" : nodes_expanded}  
 
 def calc_f_value(node,end,g_score,WEIGHT):
     return g_score[node] + (WEIGHT * h(node.get_pos(),end.get_pos()))
@@ -415,16 +429,12 @@ def ara_star(draw_func,grid,start,end):
 
 
 
-
-
-
-
-
-
-
-
-def wighted_a_star(draw_func,grid,start,end):
+def wighted_a_star(draw_func,grid,start,end,benchmark, W):
     global stop_requested
+
+    start_time = time.perf_counter()
+    nodes_expanded = 0
+
     count = 0
     frontier = []
     heapq.heappush(frontier,((0,count,start)))
@@ -432,27 +442,39 @@ def wighted_a_star(draw_func,grid,start,end):
     g_score = {node: float("inf") for row in grid for node in row}
     g_score[start]=0
     
-    WEIGHT = 5
+   
     f_score = {node: float("inf") for row in grid for node in row}
-    f_score[start]=h(start.get_pos(),end.get_pos())*WEIGHT
+    f_score[start]=h(start.get_pos(),end.get_pos())*W
 
     frontier_track={start}
     step_counter = 0
 
     while frontier and not stop_requested:
-        
-        for event in pygame.event.get():
-            if event == pygame.QUIT:
-                return False
-            
+        if not benchmark:
+            for event in pygame.event.get():
+                if event == pygame.QUIT:
+                    return {"found": False, "nodes" : nodes_expanded}
+
+        nodes_expanded += 1    
         node = heapq.heappop(frontier)[2]
         frontier_track.remove(node)
         
         if node == end:
-            draw_path(parent,node,draw_func)
-            end.make_end()
-            start.make_start()
-            return True
+            runtime_ms = (time.perf_counter() - start_time) * 1000 
+            
+            if not benchmark and draw_func:
+                draw_path(parent,node,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            
+            return{
+                "found" : True,
+                "runtime" : runtime_ms,
+                "nodes": nodes_expanded,
+                "cost" : g_score[end],
+                "weight" : W
+            }
         
 
         for neighbor in node.neighbors:
@@ -460,26 +482,26 @@ def wighted_a_star(draw_func,grid,start,end):
             if temp_g_score < g_score[neighbor]:
                 parent[neighbor] = node
                 g_score[neighbor] = temp_g_score
-                f_score[neighbor] = temp_g_score + (h(neighbor.get_pos(),end.get_pos())*WEIGHT)
+                f_score[neighbor] = temp_g_score + (h(neighbor.get_pos(),end.get_pos())*W)
                 
                 if neighbor not in frontier_track:
                     count+=1
                     heapq.heappush(frontier,(f_score[neighbor],count,neighbor))
                     frontier_track.add(neighbor)
-                    if neighbor != end:
+                    if not benchmark and neighbor != end:
                         neighbor.make_frontier()
-        draw_func()
+        
+        if not benchmark and draw_func:
+            if node != start:
+                node.make_explored()
 
-        if node != start:
-            node.make_explored()
+            #diegno solo ogni N step per ridurre il flickering
+            step_counter += 1
+            if step_counter % 5 == 0:  # disegno ongi 5 step
+                draw_func()
+                #pygame.time.delay(10)   #piccola pausa per vedere animazione
 
-        #diegno solo ogni N step per ridurre il flickering
-        step_counter += 1
-        if step_counter % 5 == 0:  # disegno ongi 5 step
-            draw_func()
-            pygame.time.delay(10)   #piccola pausa per vedere animazione
-
-    return False    
+    return  {"found": False, "nodes": nodes_expanded}    
 
 
 def draw_path_stack(path,draw_func):
@@ -839,20 +861,24 @@ def get_clicked_position(pos,rows,cols,node_width,node_height,offset_x,offset_y)
     col = real_x // node_width
     return  row,col
 
-def run_algorithm_thread(draw_func,grid,start,end):
+def run_algorithm_thread(draw_func,grid,start,end,benchmark):
     global algorithm_running, finished
     try:
-        #a_star(draw_func,grid,start,end)
+        #risultato = a_star(draw_func,grid,start,end,benchmark)
         #ida_star(start,end,draw_func,grid)
-        #wighted_a_star(draw_func,grid,start,end)
-        ara_star(draw_func,grid,start,end)
+        risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 2.0)
+        if benchmark and isinstance(risultato,dict):
+            print(f"\n--- Risultati Benchmark ---")
+            print(f"Tempo: {risultato['runtime']:.2f} ms")
+            print(f"Nodi: {risultato['nodes']}")
+            print(f"Costo: {risultato['cost']}")
+            print(f"Peso: {risultato['weight']}")
     except pygame.error:
         return
         
     finally:
         finished = True
         algorithm_running = False
-    
 
 
 def main():
@@ -907,7 +933,8 @@ def main():
                         stop_requested = False
                         
                         draw_func = lambda: draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
-                        thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end))
+                        benchmark_mode = True
+                        thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end, benchmark_mode))
                         thread.daemon = True
                         thread.start()                        
                     
