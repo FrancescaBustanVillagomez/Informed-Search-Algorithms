@@ -249,31 +249,36 @@ def a_star(draw_func,grid,start,end,benchamark):
 def calc_f_value(node,end,g_score,WEIGHT):
     return g_score[node] + (WEIGHT * h(node.get_pos(),end.get_pos()))
 
-def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,parent,incons,count_ref):
+def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,parent,incons,count_ref,benchmark):
     global stop_requested
     count = count_ref[0]
     f_end = calc_f_value(end,end,g_score,WEIGHT)
-    step_counter = 0
+    step_counter = 0 # serve per la gestione della grafica
+    nodes_count = 0
+
     while frontier and f_end > frontier[0][0]:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                stop_requested = True
-                return
+        if not benchmark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    stop_requested = True
+                    return 0
         if stop_requested:
-            return
+            return 0
         
         f_value,_,node = heapq.heappop(frontier)
         if node in explored:
             continue
         
+        nodes_count += 1
         frontier_track.remove(node)
         explored.add(node)
 
-        if not node.is_start() and not node.is_end():
-            node.make_explored()
+        if not benchmark and draw_func:
+            if not node.is_start() and not node.is_end():
+                node.make_explored()
             
-        draw_func()
-        pygame.time.delay(2)
+            draw_func()
+            pygame.time.delay(2)
 
         for neighbor in node.neighbors:
             temp_g_score = g_score[node] + 1
@@ -290,10 +295,11 @@ def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,p
                     f_value_neighbor = calc_f_value(neighbor,end,g_score,WEIGHT)
                     heapq.heappush(frontier,(f_value_neighbor,count,neighbor))
                     frontier_track.add(neighbor)
-                    if not neighbor.is_end() and not neighbor.is_start():
-                        neighbor.make_frontier()
-                        draw_func()
-                        pygame.time.delay(2)
+                    if not benchmark and draw_func:
+                        if not neighbor.is_end() and not neighbor.is_start():
+                            neighbor.make_frontier()
+                            draw_func()
+                            pygame.time.delay(2)
                 else:
                     incons.add(neighbor)
 
@@ -308,7 +314,7 @@ def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,p
     count_ref[0] = count
     
     
-    return
+    return nodes_count
 
 def get_min_g_h(frontier_track,incons,g_score,end):
     nodes = frontier_track.union(incons)
@@ -320,13 +326,15 @@ def get_min_g_h(frontier_track,incons,g_score,end):
     return min_g_h
 
 
-def ara_star(draw_func,grid,start,end):
+def ara_star(draw_func,grid,start,end ,benchmark, W_iniz , W_decr):
     global stop_requested
-    count = 0
-    
-    WEIGHT = 5.0
-    WEIGHT_DEC = 1.0
 
+    start_time = time.perf_counter()
+    tot_nodes_explored = 0
+    history = [] # raccolta dati per l'aspetto anytime
+    
+    W = W_iniz
+    count = 0
     parent = {}
     explored = set()
     incons = set()
@@ -335,34 +343,44 @@ def ara_star(draw_func,grid,start,end):
     g_score[start] = 0
     frontier = []
     frontier_track = {start}
-    heapq.heappush(frontier,(calc_f_value(start,end,g_score,WEIGHT),count,start))
+    heapq.heappush(frontier,(calc_f_value(start,end,g_score,W),count,start))
     
     count_ref = [count] #faccio una copia di count da passare a improve in modo da mantenere le modifiche al ritorno della funzione
-    improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,parent,incons,count_ref)
+    nodes = improve_path(draw_func,end,g_score,W,frontier,frontier_track,explored,parent,incons,count_ref,benchmark)
+    tot_nodes_explored += nodes 
     count = count_ref[0]#recupero il valore
 
     if stop_requested:
-        return False
+        return []
 
 
     min_g_h = get_min_g_h(frontier_track,incons,g_score,end)
 
     if g_score[end] == float("inf"):
-        print("Nessuna soluzione trovata")
+        #print("Nessuna soluzione trovata")
         epsilon_primo = 0
     elif min_g_h == float("inf") or min_g_h == 0 :
         epsilon_primo = 1.0
     else:
-        epsilon_primo = min(WEIGHT, g_score[end]/min_g_h)
+        epsilon_primo = min(W, g_score[end]/min_g_h)
 
-    
-    print(f"--- Soluzione Pubblicata ---")
-    print(f"Costo Percorso: {g_score[end]}")
-    print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
-    print(f"(Peso 'W' usato in questa ricerca: {WEIGHT})")
-    print("----------------------------")   
+    if g_score[end] != float("inf"):
+        history.append({
+            "found" : True,
+            "runtime" : (time.perf_counter() - start_time) * 1000,
+            "nodes": tot_nodes_explored,
+            "cost" : g_score[end],
+            "weight" : W,
+            "epsilon" : epsilon_primo
+        })
+    if not benchmark:
+        print(f"--- Soluzione Pubblicata ---")
+        print(f"Costo Percorso: {g_score[end]}")
+        print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
+        print(f"(Peso 'W' usato in questa ricerca: {W})")
+        print("----------------------------")   
 
-    if g_score[end]!= float("inf"):
+    if not benchmark and g_score[end]!= float("inf"):
         draw_path(parent,end,draw_func)
         end.make_end()
         start.make_start()
@@ -370,37 +388,38 @@ def ara_star(draw_func,grid,start,end):
         #pygame.time.delay(1000)
 
 
-
-
     while epsilon_primo > 1 and not stop_requested:
-        WEIGHT = max(1.0,WEIGHT - WEIGHT_DEC)
+        W = max(1.0,W - W_decr)
+
         new_frontier = frontier_track.union(incons)
         frontier_track.clear()
         incons.clear()
         frontier.clear()
         explored.clear()
 
-        for row in grid:
-            for node in row:
-                
-                if node.color == PATH and not node.is_start() and not node.is_end():
-                   node.make_explored()
+        if not benchmark:
+            for row in grid:
+                for node in row:
+                    if node.color == PATH and not node.is_start() and not node.is_end():
+                        node.make_explored()
         
         for node in new_frontier:
             count +=1
-            new_f_value = calc_f_value(node,end,g_score,WEIGHT)
+            new_f_value = calc_f_value(node,end,g_score,W)
             heapq.heappush(frontier,(new_f_value,count,node))
             frontier_track.add(node)
             
-            if not node.is_start() and not node.is_end():
+            if not benchmark and not node.is_start() and not node.is_end():
                 node.make_frontier()
         
-        draw_func()
-        pygame.time.delay(10)
+        if not benchmark :
+            draw_func()
+            pygame.time.delay(10)
         
         
         count_ref = [count]
-        improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,parent,incons,count_ref)
+        nodes = improve_path(draw_func,end,g_score,W,frontier,frontier_track,explored,parent,incons,count_ref, benchmark)
+        tot_nodes_explored += nodes
         count = count_ref[0]
         if stop_requested:
             break
@@ -411,21 +430,30 @@ def ara_star(draw_func,grid,start,end):
         if min_g_h == float("inf") or min_g_h == 0 :
             epsilon_primo = 1.0
         else:
-            epsilon_primo = min(WEIGHT, g_score[end]/min_g_h)
+            epsilon_primo = min(W, g_score[end]/min_g_h)
+        history. append({
+            "found" : True,
+            "runtime" : (time.perf_counter() - start_time) * 1000,
+            "nodes": tot_nodes_explored,
+            "cost" : g_score[end],
+            "weight" : W,
+            "epsilon" : epsilon_primo
+            
+        })
+        if not benchmark:
+            print(f"--- Soluzione Pubblicata ---")
+            print(f"Costo Percorso: {g_score[end]}")
+            print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
+            print(f"(Peso 'W' usato in questa ricerca: {W})")
+            print("----------------------------")   
 
-        print(f"--- Soluzione Pubblicata ---")
-        print(f"Costo Percorso: {g_score[end]}")
-        print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
-        print(f"(Peso 'W' usato in questa ricerca: {WEIGHT})")
-        print("----------------------------")   
-
-        if g_score[end] != float("inf"):
+        if not benchmark and g_score[end] != float("inf"):
             draw_path(parent, end, draw_func)
             end.make_end()
             start.make_start()
             #draw_func()
             #pygame.time.delay(1000)
-    return True
+    return history
 
 
 
@@ -452,7 +480,7 @@ def wighted_a_star(draw_func,grid,start,end,benchmark, W):
     while frontier and not stop_requested:
         if not benchmark:
             for event in pygame.event.get():
-                if event == pygame.QUIT:
+                if event.type == pygame.QUIT:
                     return {"found": False, "nodes" : nodes_expanded}
 
         nodes_expanded += 1    
@@ -513,9 +541,15 @@ def draw_path_stack(path,draw_func):
 
 
 
+nodes_explored = 0 # var globale adesso
 
-def ida_star(start,end,draw_func,grid):
-    global stop_requested
+def ida_star(start,end,draw_func,grid,benchmark):
+    global stop_requested, nodes_explored
+
+    start_time = time.perf_counter()
+    nodes_explored = 0
+
+
     limite = h(start.get_pos(),end.get_pos())
     path = deque()
     path.append(start)
@@ -523,22 +557,33 @@ def ida_star(start,end,draw_func,grid):
     path_copy.add(start)
     iterazione = 0
     while not stop_requested:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False   # algorithm non piu respondabile di chiusura di finestra 
+        if not benchmark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return {"found": False, "nodes" : nodes_explored}   # algorithm non piu respondabile di chiusura di finestra 
         
         iterazione+=1
-
-        print(f"IDA* iterazione {iterazione}, soglia f = {limite}")
+        if not benchmark:
+            print(f"IDA* iterazione {iterazione}, soglia f = {limite}")
      
-        ris = search(path,path_copy,0,limite,end,draw_func,iterazione)
+        ris = search(path,path_copy,0,limite,end,draw_func,iterazione,benchmark)
         if ris == True:
-            draw_path_stack(path,draw_func)
-            end.make_end()
-            start.make_start()
-            return True
+            runtime_ms = (time.perf_counter() - start_time) * 1000
+            cost_fin = len(path) - 1
+            if not benchmark and draw_func:
+                draw_path_stack(path,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            return{
+                "found" : True,
+                "runtime" : runtime_ms,
+                "nodes" : nodes_explored, # incrementatore in search()
+                "cost" : cost_fin,
+                "iterations" : iterazione
+            }
         if ris == float("inf"):
-            return False
+            return {"found": False, "nodes" : nodes_explored}
         
         
         path.clear()
@@ -546,50 +591,56 @@ def ida_star(start,end,draw_func,grid):
         path_copy.clear()
         path_copy.add(start)
         limite = ris
-
-nodes_explored = 0
+    return {"found" : False, "nodes": nodes_explored}
+    #nodes_explored = 0
     
-def search(path,path_copy,g_score,limite,end,draw_func,iterazione):
+def search(path,path_copy,g_score,limite,end,draw_func,iterazione, benchmark):
     global stop_requested,nodes_explored
     nodes_explored+=1
 
-    if nodes_explored % 100 == 0:
-        print(nodes_explored)
     if stop_requested:
         return float("inf")
+    
+    if nodes_explored % 500 == 0 and not benchmark:
+        print(nodes_explored)
+
     node = path[-1]
     f_score =  g_score +h(node.get_pos(),end.get_pos())
     if f_score > limite:
         return f_score
     if node.is_end():
         return True
-    min = float("inf")
-    if not node.is_start() and not node.is_end():
-        node.make_explored()
-        draw_func()
-        pygame.time.delay(15)
+    min_v = float("inf")
+    
+    if not benchmark and draw_func:
+        if not node.is_start() and not node.is_end():
+            node.make_explored()
+            draw_func()
+            pygame.time.delay(15)
     
     for neighbor in node.neighbors:
         if neighbor not in path_copy:
-            if not neighbor.is_end():
+            if not benchmark and not neighbor.is_end():
                 neighbor.make_frontier()
-                draw_func()
+                if draw_func: draw_func()
+
             path.append(neighbor)
             path_copy.add(neighbor)
-            ris = search(path,path_copy,g_score+1,limite,end,draw_func,iterazione)
+            ris = search(path,path_copy,g_score+1,limite,end,draw_func,iterazione,benchmark)
             
             if ris == True:
                 return True
             
-            if ris < min:
-                min = ris
+            if ris < min_v:
+                min_v = ris
             path.pop()
             path_copy.discard(neighbor)
     
-    if not node.is_start() and not node.is_end():
-        node.make_explored()
-        draw_func()
-    return min
+    if not benchmark and draw_func:
+        if not node.is_start() and not node.is_end():
+            node.make_explored()
+            draw_func()
+    return min_v
             
 
 
@@ -865,14 +916,31 @@ def run_algorithm_thread(draw_func,grid,start,end,benchmark):
     global algorithm_running, finished
     try:
         #risultato = a_star(draw_func,grid,start,end,benchmark)
-        #ida_star(start,end,draw_func,grid)
-        risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 2.0)
-        if benchmark and isinstance(risultato,dict):
-            print(f"\n--- Risultati Benchmark ---")
-            print(f"Tempo: {risultato['runtime']:.2f} ms")
-            print(f"Nodi: {risultato['nodes']}")
-            print(f"Costo: {risultato['cost']}")
-            print(f"Peso: {risultato['weight']}")
+        #risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 2.0)
+        #risultato = ida_star(start,end,draw_func,grid,benchmark)
+        risultato = ara_star(draw_func,grid,start,end,benchmark,5.0,1.0)
+        if benchmark:
+            if isinstance(risultato,dict):
+                print(f"\n--- Risultati Benchmark ---")
+                print(f"Tempo: {risultato['runtime']:.2f} ms")
+                print(f"Nodi: {risultato['nodes']}")
+                print(f"Costo: {risultato['cost']}")
+                if 'weight' in risultato: print(f"Peso: {risultato['weight']}")
+                if 'iterations' in risultato: print(f"Iterazione: {risultato['iterations']}")
+            elif isinstance(risultato, list):
+                print(f"\n--- Risultati Benchmark ARA* (Anytime) ---")
+                for i, sol in enumerate(risultato):
+                    print(f"Soluzione {i+1} [W={sol['weight']:.1f}]:")
+                    print(f"  > Tempo: {sol['runtime']:.2f} ms")
+                    print(f"  > Nodi: {sol['nodes']}")
+                    print(f"  > Costo: {sol['cost']}")
+                    print(f"  > Epsilon': {sol['epsilon']:.2f}")
+                
+                # Se vuoi un riassunto finale dell'ultima soluzione trovata
+                if risultato:
+                    ultima = risultato[-1]
+                    print(f"--- Miglior Soluzione Finale: Costo {ultima['cost']} ---")
+
     except pygame.error:
         return
         
