@@ -9,8 +9,14 @@ from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
 #MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
-MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "lak303d.map")
+#MAP = os.path.join(BASE_DIR, "mappe vuote", "empty-48-48.map")
+#MAP = os.path.join(BASE_DIR, "mappe game", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-128-128-10.map")
+MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-32-32-2.map")
 #MAP = os.path.join(BASE_DIR, "mappe", "den401d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den009d.map")
 
 #MAP = "mappe/brc997d.map"
 #MAP = "mappe/orz302d.map"
@@ -181,7 +187,7 @@ def a_star(draw_func,grid,start,end,benchamark):
     
     start_time = time.perf_counter()
     nodes_expanded=0
-    
+    max_memory = 0
     count = 0 # serve per i tie breaker
     frontier = []
     heapq.heappush(frontier,((0,count,start)))  # sto mettendo f(n) , count e start
@@ -197,6 +203,11 @@ def a_star(draw_func,grid,start,end,benchamark):
     step_counter = 0 #disegna solo ogni 5 step
 
     while frontier and not stop_requested:
+
+        current_memory = len(frontier) + len(parent)
+        if current_memory > max_memory:
+            max_memory = current_memory
+
         if not benchamark:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -217,6 +228,7 @@ def a_star(draw_func,grid,start,end,benchamark):
                 "found" : True,
                 "runtime" :runtime_ms,
                 "nodes" : nodes_expanded,
+                "peak_memory": max_memory,
                 "cost" : g_score[end] 
             }
         
@@ -462,6 +474,7 @@ def wighted_a_star(draw_func,grid,start,end,benchmark, W):
 
     start_time = time.perf_counter()
     nodes_expanded = 0
+    nodes_generated = 0
 
     count = 0
     frontier = []
@@ -500,12 +513,14 @@ def wighted_a_star(draw_func,grid,start,end,benchmark, W):
                 "found" : True,
                 "runtime" : runtime_ms,
                 "nodes": nodes_expanded,
+                "nodes_generated" : nodes_generated,
                 "cost" : g_score[end],
                 "weight" : W
             }
         
 
         for neighbor in node.neighbors:
+            nodes_generated += 1
             temp_g_score = g_score[node]+1
             if temp_g_score < g_score[neighbor]:
                 parent[neighbor] = node
@@ -542,9 +557,10 @@ def draw_path_stack(path,draw_func):
 
 
 nodes_explored = 0 # var globale adesso
+max_depth = 0
 
 def ida_star(start,end,draw_func,grid,benchmark):
-    global stop_requested, nodes_explored
+    global stop_requested, nodes_explored, max_depth
 
     start_time = time.perf_counter()
     nodes_explored = 0
@@ -579,6 +595,7 @@ def ida_star(start,end,draw_func,grid,benchmark):
                 "found" : True,
                 "runtime" : runtime_ms,
                 "nodes" : nodes_explored, # incrementatore in search()
+                "peak_memory": max_depth,
                 "cost" : cost_fin,
                 "iterations" : iterazione
             }
@@ -593,11 +610,17 @@ def ida_star(start,end,draw_func,grid,benchmark):
         limite = ris
     return {"found" : False, "nodes": nodes_explored}
     #nodes_explored = 0
-    
-def search(path,path_copy,g_score,limite,end,draw_func,iterazione, benchmark):
-    global stop_requested,nodes_explored
-    nodes_explored+=1
 
+
+
+def search(path,path_copy,g_score,limite,end,draw_func,iterazione, benchmark):
+    global stop_requested,nodes_explored,max_depth
+    
+    if len(path) > max_depth:
+        max_depth = len(path)
+
+    nodes_explored+=1
+    
     if stop_requested:
         return float("inf")
     
@@ -693,6 +716,7 @@ def load_map(map_path):
     except Exception as e:
         print(f"Errore nel caricamento della mappa: {e}")
         return None, 0, 0, 0, 0
+
 
 '''
 def adjust_viewport_to_grid(rows, cols, node_size):
@@ -912,13 +936,19 @@ def get_clicked_position(pos,rows,cols,node_width,node_height,offset_x,offset_y)
     col = real_x // node_width
     return  row,col
 
+
+
+
+
+
+
 def run_algorithm_thread(draw_func,grid,start,end,benchmark):
     global algorithm_running, finished
     try:
-        #risultato = a_star(draw_func,grid,start,end,benchmark)
-        #risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 2.0)
+        risultato = a_star(draw_func,grid,start,end,benchmark)
+        #risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 1.5)
         #risultato = ida_star(start,end,draw_func,grid,benchmark)
-        risultato = ara_star(draw_func,grid,start,end,benchmark,5.0,1.0)
+        #risultato = ara_star(draw_func,grid,start,end,benchmark,3.0,0.5)
         if benchmark:
             if isinstance(risultato,dict):
                 print(f"\n--- Risultati Benchmark ---")
@@ -927,6 +957,8 @@ def run_algorithm_thread(draw_func,grid,start,end,benchmark):
                 print(f"Costo: {risultato['cost']}")
                 if 'weight' in risultato: print(f"Peso: {risultato['weight']}")
                 if 'iterations' in risultato: print(f"Iterazione: {risultato['iterations']}")
+                if 'peak_memory' in risultato: print(f"Memoria (Picco Nodi): {risultato['peak_memory']}")
+                if 'nodes_generated' in risultato: print(f"Nodi generati: {risultato['nodes_generated']}")
             elif isinstance(risultato, list):
                 print(f"\n--- Risultati Benchmark ARA* (Anytime) ---")
                 for i, sol in enumerate(risultato):
@@ -1071,6 +1103,7 @@ def main():
             if pygame.mouse.get_pressed()[0]:     # get_pressed è una funzione che restituisce una tupla(True,false, true) o qualsiasi combainzione che ci dice che il puls. sinistro /centrale /destro sono stati cliccati  e mettendo [0] significa che mi sto interessando a quello sinistro
                 pos= pygame.mouse.get_pos()  
                 row,col = get_clicked_position(pos,ROWS,COLS,node_width,node_height,offset_x, offset_y) # chiamo funzione ausiliaria creata prima
+                print(f"Coordinate cliccate -> RIGA (Y):  {row}, COLONNA (X): {col}")
                 if 0 <= row < ROWS and 0 <= col < COLS:
                         node = grid[row][col]
                         if not start and node != end and not node.is_obstacle():
