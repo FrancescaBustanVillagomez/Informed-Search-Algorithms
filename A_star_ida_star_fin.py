@@ -10,11 +10,12 @@ from collections import deque
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
 #MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
 #MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+MAP = os.path.join(BASE_DIR, "mappe", "den201d.map")
 #MAP = os.path.join(BASE_DIR, "mappe", "lak303d.map")
 #MAP = os.path.join(BASE_DIR, "mappe vuote", "empty-48-48.map")
 #MAP = os.path.join(BASE_DIR, "mappe game", "den203d.map")
 #MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-128-128-10.map")
-MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-32-32-2.map")
+#MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-32-32-2.map")
 #MAP = os.path.join(BASE_DIR, "mappe", "den401d.map")
 #MAP = os.path.join(BASE_DIR, "mappe", "den009d.map")
 
@@ -1033,7 +1034,7 @@ def main():
                         stop_requested = False
                         
                         draw_func = lambda: draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
-                        benchmark_mode = True
+                        benchmark_mode = False
                         thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end, benchmark_mode))
                         thread.daemon = True
                         thread.start()                        
