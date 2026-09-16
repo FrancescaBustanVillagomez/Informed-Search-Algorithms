@@ -4,11 +4,41 @@ import heapq
 import os
 import threading
 import sys
+import time
 from collections import deque
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # cartella in cui si trova questo file py
-MAP = os.path.join(BASE_DIR, "mappe2", "lt_foundry_n.map")  # percorso completo per trovare la mappa
-#MAP = os.path.join(BASE_DIR, "mappe", "arena.map")  
+#MAP = os.path.join(BASE_DIR, "mappe", "lgt101d.map")  # percorso completo per trovare la mappa
+#MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+MAP = os.path.join(BASE_DIR, "mappe", "den201d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "lak303d.map")
+#MAP = os.path.join(BASE_DIR, "mappe vuote", "empty-48-48.map")
+#MAP = os.path.join(BASE_DIR, "mappe game", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-128-128-10.map")
+#MAP = os.path.join(BASE_DIR, "mappe labirinto", "maze-32-32-2.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den401d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den009d.map")
+
+#MAP = "mappe/brc997d.map"
+#MAP = "mappe/orz302d.map"
+# Mappe piccole
+#MAP = "den009d.map" 34*50
+#MAP = "den201d.map " 37*37
+#MAP = "den404d.map" 34*28
+#MAP = "hrt002d.map" 50*49
+#MAP = "isound1.map" 50*49
+#MAP = "lak101d.map" 31*30 dalla 101 alla 105 poi 107-110
+#MAP = "lgt101d.map" 28*44 da 101 a 105 e da 107 a 110
+
+#Mappe medie:
+#MAP = os.path.join(BASE_DIR, "mappe", "den203d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den308d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "den998d.map")
+#MAP = os.path.join(BASE_DIR, "mappe", "hrt002d.map")
+
+#mappe grandi
+#MAP = "mappe2/lt_foundry_n.map" 92*109
+#MAP = "lgt101d.map" 28*44
 WIDTH = 800
 
 WIN = pygame.display.set_mode((WIDTH, WIDTH))
@@ -26,6 +56,17 @@ stop_requested = False   # serve al thread
 algorithm_running = False
 finished = False
 
+'''
+# Colori
+EXPLORED = (255,0, 0)  # rosso
+FRONTIER = (128, 255, 0) # verde
+BACKGROUND = (255, 255, 255)
+OBSTACLE = (0, 0, 0) 
+PATH = (204, 153, 255)   #violetto
+START = (255, 153, 51) # arancione
+GREY = (128, 128, 128)
+END = (153, 0, 76) # bordeux
+'''
 
 
 
@@ -142,8 +183,12 @@ def draw_path(parent,node,draw_func):
             node.make_path()
         draw_func()
 
-def algorithm(draw_func,grid,start,end):
+def a_star(draw_func,grid,start,end,benchamark):
     global stop_requested
+    
+    start_time = time.perf_counter()
+    nodes_expanded=0
+    max_memory = 0
     count = 0 # serve per i tie breaker
     frontier = []
     heapq.heappush(frontier,((0,count,start)))  # sto mettendo f(n) , count e start
@@ -159,19 +204,34 @@ def algorithm(draw_func,grid,start,end):
     step_counter = 0 #disegna solo ogni 5 step
 
     while frontier and not stop_requested:
-        
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False   # algorithm non piu respondabile di chiusura di finestra 
-        
+
+        current_memory = len(frontier) + len(parent)
+        if current_memory > max_memory:
+            max_memory = current_memory
+
+        if not benchamark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return False   # algorithm non piu respondabile di chiusura di finestra 
+        nodes_expanded += 1
         node = heapq.heappop(frontier)[2]  
         frontier_track.remove(node)
 
         if node == end:
-            draw_path(parent,node,draw_func)
-            end.make_end()
-            start.make_start()
-            return True
+            #abbiamo funito quindi calcolo il runtime
+            runtime_ms = (time.perf_counter() - start_time) * 1000  # per trasformarli in millisecondi
+            if not benchamark and draw_func:
+                draw_path(parent,node,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            return{
+                "found" : True,
+                "runtime" :runtime_ms,
+                "nodes" : nodes_expanded,
+                "peak_memory": max_memory,
+                "cost" : g_score[end] 
+            }
         
         for neighbor in node.neighbors:
             temp_g_score = g_score[node]+1
@@ -184,33 +244,329 @@ def algorithm(draw_func,grid,start,end):
                     count+=1
                     heapq.heappush(frontier,(f_score[neighbor],count,neighbor))
                     frontier_track.add(neighbor)
-                    if neighbor != end:
+                    if not benchamark and neighbor != end:
                         neighbor.make_frontier()
-        draw_func()
+        
+        if not benchamark and draw_func:
+            if node != start:
+                node.make_explored()
 
-        if node != start:
-            node.make_explored()
+            #diegno solo ogni N step per ridurre il flickering
+            step_counter += 1
+            if step_counter % 5 == 0:  # disegno ongi 5 step
+                draw_func()
+                #pygame.time.delay(10)   #piccola pausa per vedere animazione
 
-        #diegno solo ogni N step per ridurre il flickering
-        step_counter += 1
-        if step_counter % 5 == 0:  # disegno ongi 5 step
+    return {"found" : False, "nodes" : nodes_expanded}  
+
+def calc_f_value(node,end,g_score,WEIGHT):
+    return g_score[node] + (WEIGHT * h(node.get_pos(),end.get_pos()))
+
+def improve_path(draw_func,end,g_score,WEIGHT,frontier,frontier_track,explored,parent,incons,count_ref,benchmark):
+    global stop_requested
+    count = count_ref[0]
+    f_end = calc_f_value(end,end,g_score,WEIGHT)
+    step_counter = 0 # serve per la gestione della grafica
+    nodes_count = 0
+
+    while frontier and f_end > frontier[0][0]:
+        if not benchmark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    stop_requested = True
+                    return 0
+        if stop_requested:
+            return 0
+        
+        f_value,_,node = heapq.heappop(frontier)
+        if node in explored:
+            continue
+        
+        nodes_count += 1
+        frontier_track.remove(node)
+        explored.add(node)
+
+        if not benchmark and draw_func:
+            if not node.is_start() and not node.is_end():
+                node.make_explored()
+            
             draw_func()
-            pygame.time.delay(10)   #piccola pausa per vedere animazione
+            pygame.time.delay(2)
 
-    return False   
+        for neighbor in node.neighbors:
+            temp_g_score = g_score[node] + 1
+
+            if temp_g_score < g_score[neighbor]:
+                g_score[neighbor] = temp_g_score
+                parent[neighbor] = node
+
+                if neighbor == end:
+                    f_end = calc_f_value(end,end,g_score,WEIGHT)
+
+                if neighbor not in explored:
+                    count+=1
+                    f_value_neighbor = calc_f_value(neighbor,end,g_score,WEIGHT)
+                    heapq.heappush(frontier,(f_value_neighbor,count,neighbor))
+                    frontier_track.add(neighbor)
+                    if not benchmark and draw_func:
+                        if not neighbor.is_end() and not neighbor.is_start():
+                            neighbor.make_frontier()
+                            draw_func()
+                            pygame.time.delay(2)
+                else:
+                    incons.add(neighbor)
+
+        
+    step_counter += 1
+    '''
+    if step_counter % 5 == 0:
+        draw_func()
+        pygame.time.delay(5)
+    draw_func()
+    '''
+    count_ref[0] = count
+    
+    
+    return nodes_count
+
+def get_min_g_h(frontier_track,incons,g_score,end):
+    nodes = frontier_track.union(incons)
+    if not nodes:
+        return float("Inf")   #insiemi vuoti 
+    
+    min_g_h = min(
+        g_score[node]+h(node.get_pos() , end.get_pos()) for node in nodes if g_score[node]!= float("inf"))
+    return min_g_h
+
+
+def ara_star(draw_func,grid,start,end ,benchmark, W_iniz , W_decr):
+    global stop_requested
+
+    start_time = time.perf_counter()
+    tot_nodes_explored = 0
+    history = [] # raccolta dati per l'aspetto anytime
+    
+    W = W_iniz
+    count = 0
+    parent = {}
+    explored = set()
+    incons = set()
+
+    g_score = {node: float("inf") for row in grid for node in row}
+    g_score[start] = 0
+    frontier = []
+    frontier_track = {start}
+    heapq.heappush(frontier,(calc_f_value(start,end,g_score,W),count,start))
+    
+    count_ref = [count] #faccio una copia di count da passare a improve in modo da mantenere le modifiche al ritorno della funzione
+    nodes = improve_path(draw_func,end,g_score,W,frontier,frontier_track,explored,parent,incons,count_ref,benchmark)
+    tot_nodes_explored += nodes 
+    count = count_ref[0]#recupero il valore
+
+    if stop_requested:
+        return []
+
+
+    min_g_h = get_min_g_h(frontier_track,incons,g_score,end)
+
+    if g_score[end] == float("inf"):
+        #print("Nessuna soluzione trovata")
+        epsilon_primo = 0
+    elif min_g_h == float("inf") or min_g_h == 0 :
+        epsilon_primo = 1.0
+    else:
+        epsilon_primo = min(W, g_score[end]/min_g_h)
+
+    if g_score[end] != float("inf"):
+        history.append({
+            "found" : True,
+            "runtime" : (time.perf_counter() - start_time) * 1000,
+            "nodes": tot_nodes_explored,
+            "cost" : g_score[end],
+            "weight" : W,
+            "epsilon" : epsilon_primo
+        })
+    if not benchmark:
+        print(f"--- Soluzione Pubblicata ---")
+        print(f"Costo Percorso: {g_score[end]}")
+        print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
+        print(f"(Peso 'W' usato in questa ricerca: {W})")
+        print("----------------------------")   
+
+    if not benchmark and g_score[end]!= float("inf"):
+        draw_path(parent,end,draw_func)
+        end.make_end()
+        start.make_start()
+        draw_func()
+        #pygame.time.delay(1000)
+
+
+    while epsilon_primo > 1 and not stop_requested:
+        W = max(1.0,W - W_decr)
+
+        new_frontier = frontier_track.union(incons)
+        frontier_track.clear()
+        incons.clear()
+        frontier.clear()
+        explored.clear()
+
+        if not benchmark:
+            for row in grid:
+                for node in row:
+                    if node.color == PATH and not node.is_start() and not node.is_end():
+                        node.make_explored()
+        
+        for node in new_frontier:
+            count +=1
+            new_f_value = calc_f_value(node,end,g_score,W)
+            heapq.heappush(frontier,(new_f_value,count,node))
+            frontier_track.add(node)
+            
+            if not benchmark and not node.is_start() and not node.is_end():
+                node.make_frontier()
+        
+        if not benchmark :
+            draw_func()
+            pygame.time.delay(10)
+        
+        
+        count_ref = [count]
+        nodes = improve_path(draw_func,end,g_score,W,frontier,frontier_track,explored,parent,incons,count_ref, benchmark)
+        tot_nodes_explored += nodes
+        count = count_ref[0]
+        if stop_requested:
+            break
+        min_g_h = get_min_g_h(frontier_track,incons,g_score,end)
+        if g_score[end] == float("inf"):
+            print("Nessuna soluzione trovata")
+            break
+        if min_g_h == float("inf") or min_g_h == 0 :
+            epsilon_primo = 1.0
+        else:
+            epsilon_primo = min(W, g_score[end]/min_g_h)
+        history. append({
+            "found" : True,
+            "runtime" : (time.perf_counter() - start_time) * 1000,
+            "nodes": tot_nodes_explored,
+            "cost" : g_score[end],
+            "weight" : W,
+            "epsilon" : epsilon_primo
+            
+        })
+        if not benchmark:
+            print(f"--- Soluzione Pubblicata ---")
+            print(f"Costo Percorso: {g_score[end]}")
+            print(f"Limite Epsilon': {epsilon_primo:.2f}") # :.2f formatta a 2 decimali
+            print(f"(Peso 'W' usato in questa ricerca: {W})")
+            print("----------------------------")   
+
+        if not benchmark and g_score[end] != float("inf"):
+            draw_path(parent, end, draw_func)
+            end.make_end()
+            start.make_start()
+            #draw_func()
+            #pygame.time.delay(1000)
+    return history
+
+
+
+def wighted_a_star(draw_func,grid,start,end,benchmark, W):
+    global stop_requested
+
+    start_time = time.perf_counter()
+    nodes_expanded = 0
+    nodes_generated = 0
+
+    count = 0
+    frontier = []
+    heapq.heappush(frontier,((0,count,start)))
+    parent = {}
+    g_score = {node: float("inf") for row in grid for node in row}
+    g_score[start]=0
+    
+   
+    f_score = {node: float("inf") for row in grid for node in row}
+    f_score[start]=h(start.get_pos(),end.get_pos())*W
+
+    frontier_track={start}
+    step_counter = 0
+
+    while frontier and not stop_requested:
+        if not benchmark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return {"found": False, "nodes" : nodes_expanded}
+
+        nodes_expanded += 1    
+        node = heapq.heappop(frontier)[2]
+        frontier_track.remove(node)
+        
+        if node == end:
+            runtime_ms = (time.perf_counter() - start_time) * 1000 
+            
+            if not benchmark and draw_func:
+                draw_path(parent,node,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            
+            return{
+                "found" : True,
+                "runtime" : runtime_ms,
+                "nodes": nodes_expanded,
+                "nodes_generated" : nodes_generated,
+                "cost" : g_score[end],
+                "weight" : W
+            }
+        
+
+        for neighbor in node.neighbors:
+            nodes_generated += 1
+            temp_g_score = g_score[node]+1
+            if temp_g_score < g_score[neighbor]:
+                parent[neighbor] = node
+                g_score[neighbor] = temp_g_score
+                f_score[neighbor] = temp_g_score + (h(neighbor.get_pos(),end.get_pos())*W)
+                
+                if neighbor not in frontier_track:
+                    count+=1
+                    heapq.heappush(frontier,(f_score[neighbor],count,neighbor))
+                    frontier_track.add(neighbor)
+                    if not benchmark and neighbor != end:
+                        neighbor.make_frontier()
+        
+        if not benchmark and draw_func:
+            if node != start:
+                node.make_explored()
+
+            #diegno solo ogni N step per ridurre il flickering
+            step_counter += 1
+            if step_counter % 5 == 0:  # disegno ongi 5 step
+                draw_func()
+                #pygame.time.delay(10)   #piccola pausa per vedere animazione
+
+    return  {"found": False, "nodes": nodes_expanded}    
+
 
 def draw_path_stack(path,draw_func):
     for node in reversed(path):
         if not node.is_start() and not node.is_end():
             node.make_path()
         draw_func()
-    pygame.time.delay(5)
+    pygame.time.delay(25)
 
 
 
+nodes_explored = 0 # var globale adesso
+max_depth = 0
 
-def ida_star(start,end,draw_func,grid):
-    global stop_requested
+def ida_star(start,end,draw_func,grid,benchmark):
+    global stop_requested, nodes_explored, max_depth
+
+    start_time = time.perf_counter()
+    nodes_explored = 0
+
+
     limite = h(start.get_pos(),end.get_pos())
     path = deque()
     path.append(start)
@@ -218,30 +574,34 @@ def ida_star(start,end,draw_func,grid):
     path_copy.add(start)
     iterazione = 0
     while not stop_requested:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                return False   # algorithm non piu respondabile di chiusura di finestra 
+        if not benchmark:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return {"found": False, "nodes" : nodes_explored}   # algorithm non piu respondabile di chiusura di finestra 
         
         iterazione+=1
-
-        print(f"IDA* iterazione {iterazione}, soglia f = {limite}")
-        for row in grid:
-            for node in row:
-                if not node.is_start() and not node.is_end() and not node.is_obstacle():
-                    node.reset()
-        
-        
-        
-        
-        draw_func()
-        ris = search(path,path_copy,0,limite,end,draw_func,iterazione)
+        if not benchmark:
+            print(f"IDA* iterazione {iterazione}, soglia f = {limite}")
+     
+        ris = search(path,path_copy,0,limite,end,draw_func,iterazione,benchmark)
         if ris == True:
-            draw_path_stack(path,draw_func)
-            end.make_end()
-            start.make_start()
-            return True
+            runtime_ms = (time.perf_counter() - start_time) * 1000
+            cost_fin = len(path) - 1
+            if not benchmark and draw_func:
+                draw_path_stack(path,draw_func)
+                end.make_end()
+                start.make_start()
+                draw_func()
+            return{
+                "found" : True,
+                "runtime" : runtime_ms,
+                "nodes" : nodes_explored, # incrementatore in search()
+                "peak_memory": max_depth,
+                "cost" : cost_fin,
+                "iterations" : iterazione
+            }
         if ris == float("inf"):
-            return False
+            return {"found": False, "nodes" : nodes_explored}
         
         
         path.clear()
@@ -249,49 +609,62 @@ def ida_star(start,end,draw_func,grid):
         path_copy.clear()
         path_copy.add(start)
         limite = ris
+    return {"found" : False, "nodes": nodes_explored}
+    #nodes_explored = 0
 
-nodes_explored = 0
 
-def search(path,path_copy,g_score,limite,end,draw_func,iterazione):
-    global stop_requested,nodes_explored
-    if nodes_explored % 100 == 0:
-      print(nodes_explored)
 
+def search(path,path_copy,g_score,limite,end,draw_func,iterazione, benchmark):
+    global stop_requested,nodes_explored,max_depth
+    
+    if len(path) > max_depth:
+        max_depth = len(path)
+
+    nodes_explored+=1
+    
     if stop_requested:
         return float("inf")
+    
+    if nodes_explored % 500 == 0 and not benchmark:
+        print(nodes_explored)
+
     node = path[-1]
     f_score =  g_score +h(node.get_pos(),end.get_pos())
     if f_score > limite:
         return f_score
     if node.is_end():
         return True
-    min = float("inf")
-    if not node.is_start() and not node.is_end():
-        node.make_explored()
-        draw_func()
-        pygame.time.delay(5)
+    min_v = float("inf")
+    
+    if not benchmark and draw_func:
+        if not node.is_start() and not node.is_end():
+            node.make_explored()
+            draw_func()
+            pygame.time.delay(15)
     
     for neighbor in node.neighbors:
         if neighbor not in path_copy:
-            if not neighbor.is_end():
+            if not benchmark and not neighbor.is_end():
                 neighbor.make_frontier()
-                draw_func()
+                if draw_func: draw_func()
+
             path.append(neighbor)
             path_copy.add(neighbor)
-            ris = search(path,path_copy,g_score+1,limite,end,draw_func,iterazione)
+            ris = search(path,path_copy,g_score+1,limite,end,draw_func,iterazione,benchmark)
             
             if ris == True:
                 return True
             
-            if ris < min:
-                min = ris
+            if ris < min_v:
+                min_v = ris
             path.pop()
             path_copy.discard(neighbor)
     
-    if not node.is_start() and not node.is_end():
-        node.make_explored()
-        draw_func()
-    return min
+    if not benchmark and draw_func:
+        if not node.is_start() and not node.is_end():
+            node.make_explored()
+            draw_func()
+    return min_v
             
 
 
@@ -346,8 +719,45 @@ def load_map(map_path):
         return None, 0, 0, 0, 0
 
 
+'''
 def adjust_viewport_to_grid(rows, cols, node_size):
+    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
+    global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
     
+    grid_width = cols * node_size
+    grid_height = rows * node_size
+    
+    # Finestra massima consentita (es. schermo tipico)
+    MAX_WINDOW_WIDTH = 1920
+    MAX_WINDOW_HEIGHT = 1080
+    
+    # Finestra minima consentita
+    MIN_WINDOW_SIZE = 400
+    
+    # Calcola nuove dimensioni viewport
+    new_width = VIEWPORT_WIDTH
+    new_height = VIEWPORT_HEIGHT
+    
+    # Se la griglia è più piccola del viewport, riduci la finestra
+    if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
+        new_width = min(grid_width, MAX_WINDOW_WIDTH)
+    
+    if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
+        new_height = min(grid_height, MAX_WINDOW_HEIGHT)
+    
+    # Aggiorna viewport se necessario
+    if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
+        VIEWPORT_WIDTH = new_width
+        VIEWPORT_HEIGHT = new_height
+        WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        print(f"Debug: Viewport ridimensionato a {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
+        return True
+    
+    return False
+'''
+
+def adjust_viewport_to_grid(rows, cols, node_size):
+    """Adatta il viewport alla griglia se possibile, altrimenti usa scroll"""
     global VIEWPORT_WIDTH, VIEWPORT_HEIGHT, WIN
     
     grid_width = cols * node_size
@@ -364,26 +774,27 @@ def adjust_viewport_to_grid(rows, cols, node_size):
     new_width = VIEWPORT_WIDTH
     new_height = VIEWPORT_HEIGHT
     
-    
-    # Riduco larghezza solo se griglia più stretta E >= minimo
+    # MODIFICA CHIAVE: valuta larghezza e altezza INDIPENDENTEMENTE
+    # Riduci larghezza solo se griglia più stretta E >= minimo
     if grid_width < VIEWPORT_WIDTH and grid_width >= MIN_WINDOW_SIZE:
         new_width = min(grid_width, MAX_WINDOW_WIDTH)
-    # Altrimenti mantiengo larghezza corrente o aumento fino al massimo se serve scroll
+    # Altrimenti mantieni larghezza corrente o aumenta fino al massimo se serve scroll
     elif grid_width > VIEWPORT_WIDTH:
         new_width = min(VIEWPORT_WIDTH, MAX_WINDOW_WIDTH)
     
-    # Riduco altezza solo se griglia più bassa e >= minimo
+    # Riduci altezza solo se griglia più bassa E >= minimo
     if grid_height < VIEWPORT_HEIGHT and grid_height >= MIN_WINDOW_SIZE:
         new_height = min(grid_height, MAX_WINDOW_HEIGHT)
-    # Altrimenti mantiengo altezza corrente
+    # Altrimenti mantieni altezza corrente
     elif grid_height > VIEWPORT_HEIGHT:
         new_height = min(VIEWPORT_HEIGHT, MAX_WINDOW_HEIGHT)
     
-   
+    # Aggiorna viewport se necessario
     if new_width != VIEWPORT_WIDTH or new_height != VIEWPORT_HEIGHT:
         VIEWPORT_WIDTH = new_width
         VIEWPORT_HEIGHT = new_height
         WIN = pygame.display.set_mode((VIEWPORT_WIDTH, VIEWPORT_HEIGHT))
+        print(f"Debug: Viewport ridimensionato a {VIEWPORT_WIDTH}x{VIEWPORT_HEIGHT}")
         return True
     
     return False
@@ -391,8 +802,10 @@ def adjust_viewport_to_grid(rows, cols, node_size):
 
 
 def make_grid(rows, cols):
+    """Crea una griglia di nodi QUADRATI ottimizzata per riempire lo schermo"""
+    import math
     
-    # dimensione base per mantenere i nodi quadrati
+    # Calcola dimensione base per mantenere i nodi quadrati
     size_for_width = VIEWPORT_WIDTH / cols
     size_for_height = VIEWPORT_HEIGHT / rows
     exact_size = min(size_for_width, size_for_height)
@@ -400,19 +813,19 @@ def make_grid(rows, cols):
     # Verifica dimensione minima
     if exact_size < MIN_NODE_SIZE:
         node_size = MIN_NODE_SIZE
-        
+        print(f"Debug: Griglia molto grande {rows}×{cols}, usando dimensione minima {MIN_NODE_SIZE}")
     else:
-        # Calcolo spreco con entrambe le opzioni
+        # Calcola spreco con entrambe le opzioni
         node_size_floor = math.floor(exact_size)
         node_size_ceil = math.ceil(exact_size)
         
-        # Calcolo dimensioni totali
+        # Calcola dimensioni totali
         width_floor = cols * node_size_floor
         height_floor = rows * node_size_floor
         width_ceil = cols * node_size_ceil
         height_ceil = rows * node_size_ceil
         
-        # Calcolo utilizzo viewport (0-1 = sottoutilizzo, >1 = overflow)
+        # Calcola utilizzo viewport (0-1 = sottoutilizzo, >1 = overflow)
         usage_floor_w = width_floor / VIEWPORT_WIDTH
         usage_floor_h = height_floor / VIEWPORT_HEIGHT
         usage_ceil_w = width_ceil / VIEWPORT_WIDTH
@@ -435,22 +848,43 @@ def make_grid(rows, cols):
         # 2. Riduce significativamente lo spreco (almeno 5%)
         if overflow_ceil <= MAX_OVERFLOW and waste_floor - waste_ceil > 0.05:
             node_size = node_size_ceil
-            
+            reason = f"ceil per riempire meglio (spreco: floor={waste_floor*100:.1f}% vs ceil={waste_ceil*100:.1f}%)"
+        
         # Altrimenti usa ceil solo se floor spreca troppo
         elif overflow_ceil <= MAX_OVERFLOW and (usage_floor_w < MIN_USAGE or usage_floor_h < MIN_USAGE):
             node_size = node_size_ceil
-            
+            reason = f"ceil perché floor sottoutilizza ({usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
         
         # Default: usa floor per sicurezza
         else:
             node_size = node_size_floor
-            
+            if overflow_ceil > MAX_OVERFLOW:
+                reason = f"floor per evitare overflow (ceil→{overflow_ceil*100:.1f}%)"
+            else:
+                reason = f"floor per sicurezza (utilizzo {usage_floor_w*100:.1f}% × {usage_floor_h*100:.1f}%)"
+        
+        print(f"Debug: {reason}")
     
     # Calcola dimensioni finali
     total_width = cols * node_size
     total_height = rows * node_size
     node_width = node_height = node_size
     
+    # Report finale
+    usage_w = (total_width / VIEWPORT_WIDTH) * 100
+    usage_h = (total_height / VIEWPORT_HEIGHT) * 100
+    waste_w = max(0, VIEWPORT_WIDTH - total_width)
+    waste_h = max(0, VIEWPORT_HEIGHT - total_height)
+    
+    aspect_ratio = max(cols/rows, rows/cols)
+    print(f"Debug: Griglia {rows}×{cols} (aspect ratio: {aspect_ratio:.2f})")
+    print(f"Debug: Dimensione calcolata: {exact_size:.2f}px → finale: {node_size}×{node_size}px")
+    print(f"Debug: Totale griglia: {total_width}×{total_height} vs viewport {VIEWPORT_WIDTH}×{VIEWPORT_HEIGHT}")
+    print(f"Debug: Utilizzo: {usage_w:.1f}% width, {usage_h:.1f}% height")
+    print(f"Debug: Spreco: {waste_w}px width ({waste_w/VIEWPORT_WIDTH*100:.1f}%), {waste_h}px height ({waste_h/VIEWPORT_HEIGHT*100:.1f}%)")
+    
+    # Adatta il viewport alla griglia se conviene
+    #adjust_viewport_to_grid(rows, cols, node_size)
     
     grid = []
     for i in range(rows):  # fai i numeri da 0 a rows-1
@@ -503,18 +937,49 @@ def get_clicked_position(pos,rows,cols,node_width,node_height,offset_x,offset_y)
     col = real_x // node_width
     return  row,col
 
-def run_algorithm_thread(draw_func,grid,start,end):
+
+
+
+
+
+
+def run_algorithm_thread(draw_func,grid,start,end,benchmark):
     global algorithm_running, finished
     try:
-        #algorithm(draw_func,grid,start,end)
-        ida_star(start,end,draw_func,grid)
+        risultato = a_star(draw_func,grid,start,end,benchmark)
+        #risultato = wighted_a_star(draw_func, grid, start, end, benchmark, 1.5)
+        #risultato = ida_star(start,end,draw_func,grid,benchmark)
+        #risultato = ara_star(draw_func,grid,start,end,benchmark,3.0,0.5)
+        if benchmark:
+            if isinstance(risultato,dict):
+                print(f"\n--- Risultati Benchmark ---")
+                print(f"Tempo: {risultato['runtime']:.2f} ms")
+                print(f"Nodi: {risultato['nodes']}")
+                print(f"Costo: {risultato['cost']}")
+                if 'weight' in risultato: print(f"Peso: {risultato['weight']}")
+                if 'iterations' in risultato: print(f"Iterazione: {risultato['iterations']}")
+                if 'peak_memory' in risultato: print(f"Memoria (Picco Nodi): {risultato['peak_memory']}")
+                if 'nodes_generated' in risultato: print(f"Nodi generati: {risultato['nodes_generated']}")
+            elif isinstance(risultato, list):
+                print(f"\n--- Risultati Benchmark ARA* (Anytime) ---")
+                for i, sol in enumerate(risultato):
+                    print(f"Soluzione {i+1} [W={sol['weight']:.1f}]:")
+                    print(f"  > Tempo: {sol['runtime']:.2f} ms")
+                    print(f"  > Nodi: {sol['nodes']}")
+                    print(f"  > Costo: {sol['cost']}")
+                    print(f"  > Epsilon': {sol['epsilon']:.2f}")
+                
+                # Se vuoi un riassunto finale dell'ultima soluzione trovata
+                if risultato:
+                    ultima = risultato[-1]
+                    print(f"--- Miglior Soluzione Finale: Costo {ultima['cost']} ---")
+
     except pygame.error:
         return
         
     finally:
         finished = True
         algorithm_running = False
-    
 
 
 def main():
@@ -569,7 +1034,8 @@ def main():
                         stop_requested = False
                         
                         draw_func = lambda: draw(WIN, grid, ROWS, COLS, node_width, node_height, offset_x, offset_y)
-                        thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end))
+                        benchmark_mode = False
+                        thread = threading.Thread(target = run_algorithm_thread, args =(draw_func,grid, start, end, benchmark_mode))
                         thread.daemon = True
                         thread.start()                        
                     
@@ -579,7 +1045,7 @@ def main():
                         if result[0] is not None:
                             grid, ROWS, COLS, node_width, node_height = result
                             
-                           
+                            print(f"DEBUG: node_width={node_width}, node_height={node_height}")
                             adjust_viewport_to_grid(ROWS, COLS, node_width)
                             # Ricalcola offset per centratura
                             total_width = COLS * node_width
@@ -631,13 +1097,14 @@ def main():
                             offset_y = 0
 
                         draw(WIN, grid, ROWS, COLS,node_width, node_height, offset_x, offset_y)
-                        
+                        #needs_redraw = True
                         
                         
         if not algorithm_running:
             if pygame.mouse.get_pressed()[0]:     # get_pressed è una funzione che restituisce una tupla(True,false, true) o qualsiasi combainzione che ci dice che il puls. sinistro /centrale /destro sono stati cliccati  e mettendo [0] significa che mi sto interessando a quello sinistro
                 pos= pygame.mouse.get_pos()  
                 row,col = get_clicked_position(pos,ROWS,COLS,node_width,node_height,offset_x, offset_y) # chiamo funzione ausiliaria creata prima
+                print(f"Coordinate cliccate -> RIGA (Y):  {row}, COLONNA (X): {col}")
                 if 0 <= row < ROWS and 0 <= col < COLS:
                         node = grid[row][col]
                         if not start and node != end and not node.is_obstacle():
